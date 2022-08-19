@@ -7,6 +7,9 @@ import time
 import numpy as np
 import os
 import imutils
+import sys
+
+sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/bluerov2_dock')
 
 try:
     import video
@@ -329,12 +332,15 @@ class BlueROV2():
 
         self.image_idx += 1
 
+    def main():
+        rospy.init_node('mission_control', anonymous=True)
+        try:
+            rospy.spin()
+        except KeyboardInterrupt:
+            print("shutting down the node")
 
-def main():
-    rospy.init_node('mission_control', anonymous=True)
+
+if __name__ == "__main__":
     obj = BlueROV2()
-    try:
-        rospy.spin()
-    except KeyboardInterrupt:
-        print("shutting down the node")
-    
+    BlueROV2.main()
+        

@@ -1,0 +1,4 @@
+bool det_flag
+---
+bool success
+string message

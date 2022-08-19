@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""
-BlueRov video capture class
-"""
 
 import cv2
 import gi
 import numpy as np
+import rospy
+from cv_bridge import CvBridge
+
+from sensor_msgs.msg import Image
 
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
@@ -30,7 +31,8 @@ class Video():
         Args:
             port (int, optional): UDP port
         """
-
+        self.cvbridge = CvBridge()
+        
         Gst.init(None)
 
         self.port = port
@@ -51,6 +53,8 @@ class Video():
 
         self.video_pipe = None
         self.video_sink = None
+
+        self.video_publisher = rospy.Publisher('/BlueROV2/video', Image, queue_size=1)
 
         self.run()
 
@@ -134,6 +138,8 @@ class Video():
     def callback(self, sink):
         sample = sink.emit('pull-sample')
         new_frame = self.gst_to_opencv(sample)
+        ros_image = self.cvbridge.cv2_to_imgmsg(new_frame, 'bgr8')
+        self.video_publisher.publish(ros_image)
         self._frame = new_frame
 
         return Gst.FlowReturn.OK
