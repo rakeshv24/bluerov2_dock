@@ -6,9 +6,9 @@ import rospkg
 import tf
 import time
 import numpy as np
-import os
 import imutils
 import sys
+import pandas as pd
 
 sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/bluerov2_dock')
 
@@ -52,10 +52,30 @@ class BlueROV2():
         
         self.image_idx = 0
         
+        self.load_pwm_lookup()
+        
         self.mpc = MPControl()
 
         # Set up dictionary to store subscriber data
         self.sub_data_dict = {}
+        
+    def load_pwm_lookup(self):
+        csv = pd.read_csv("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/data/T200_data_16V.csv")
+
+        thrust_vals = csv['Force'].tolist()
+        neg_thrust = [i for i in thrust_vals if i < 0]
+        pos_thrust = [i for i in thrust_vals if i > 0]
+        zero_thrust = [i for i in thrust_vals if i == 0]
+
+        pwm_vals = csv['PWM'].tolist()
+        neg_t_pwm = [pwm_vals[i] for i in range(len(neg_thrust))]
+        zero_t_pwm = [pwm_vals[i] for i in range(len(neg_thrust), len(neg_thrust)+len(zero_thrust))]
+        pos_t_pwm = [pwm_vals[i] for i in range(len(neg_thrust)+len(zero_thrust), len(thrust_vals))]
+
+        self.neg_thrusts = np.array(neg_thrust)
+        self.pos_thrusts = np.array(pos_thrust)
+        self.neg_pwm = np.array(neg_t_pwm)
+        self.pos_pwm = np.array(pos_t_pwm)
     
     def run(self):
         self.setup_video()
@@ -219,8 +239,18 @@ class BlueROV2():
         try:        
             for i in range(6):
                 t = thrust[i] / 9.8
-                p = 0.1427*t**5 - 0.0655*t**4 - 5.6083*t**3 - 0.6309*t**2 + 140.5964*t + 1491.3739
+                
+                # p = 0.1427*t**5 - 0.0655*t**4 - 5.6083*t**3 - 0.6309*t**2 + 140.5964*t + 1491.3739
+                
+                if t > 0.0:
+                    p = np.interp(t, self.pos_thrusts, self.pos_pwm)
+                elif t < 0.0:
+                    p = np.interp(t, self.neg_thrusts, self.neg_pwm)
+                else:
+                    p = 1500
+                
                 values.append(round(p))
+                
             pwm = [values[4], values[3], values[2], values[5], values[0], values[1]]
         except Exception as e:
             rospy.logerr_throttle(10, "[BlueROV2][thrust_to_pwm] Error in thrust to pwm conversion. Setting neutral pwm")
