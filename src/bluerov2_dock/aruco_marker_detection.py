@@ -172,7 +172,8 @@ class Aruco():
                         if j[0] not in self.desired_markers:
                             continue
                         
-                        # If the current detection is the same as in the previous frame, then assert the flag and store the previous marker index
+                        # If the current detection is the same as in the previous frame, then assert the flag and store 
+                        # the previous marker index
                         if j[0] == self.prev_marker:
                             self.prev_marker_check = True
                             self.prev_marker_index = i
@@ -181,19 +182,23 @@ class Aruco():
                         side_length = abs(corners[i][0][0][0] - corners[i][0][2][0]) + \
                             abs(corners[i][0][0][1] - corners[i][0][2][1])
 
-                        # Checks if the side length of the current marker is greater than a threshold (which accounts for the detection of the smallest marker), then store that information                 
+                        # Checks if the side length of the current marker is greater than a threshold (which accounts 
+                        # for the detection of the smallest marker), then store that information                 
                         check_thresh = side_length > self.marker_thresh
                         if check_thresh:
                             detected_marker_ids.append(i)
                             des_detected_markers.append(self.marker_size[j[0]])
                         
-                        # Checks if the size of the current marker is greater than that of the largest marker from the previous frames, then store the current marker as the largest marker
+                        # Checks if the size of the current marker is greater than that of the largest marker from the 
+                        # previous frames, then store the current marker as the largest marker
                         check_max = self.marker_size[j[0]] >= self.max_size
                         if check_max:
                             self.max_size = self.marker_size[j[0]]
                             max_marker_index = i
 
-                    # If there are more than one of the desired markers, pick the smallest marker; Else, pick the largest detectable marker one or report that none of the desired markers were detected.
+                    # If there are more than one of the desired markers, pick the smallest marker; 
+                    # Else, pick the largest detectable marker one or report that none of 
+                    # the desired markers were detected.
                     if len(des_detected_markers) > 0:
                         min_index = des_detected_markers.index(min(des_detected_markers))
                         target_index = detected_marker_ids[min_index]
@@ -219,7 +224,8 @@ class Aruco():
                             self.first_marker = False
 
                         else:
-                            # If the previous marker and the current marker are the same, then assert the controller flag
+                            # If the previous marker and the current marker are the same, 
+                            # then assert the controller flag
                             if self.prev_marker == ids[target_index][0]:
                                 pub_obj.controller_param = True
                                 target_index = self.prev_marker_index
