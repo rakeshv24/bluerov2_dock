@@ -15,6 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
     sensor_msgs
     geometry_msgs
     mavros_msgs
+    nav_msgs
     tf)
 
 # find_package(octomap REQUIRED)
@@ -56,18 +57,21 @@ catkin_python_setup()
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
+add_message_files(
+  FILES
+  marker_detect.msg
+  marker_pose.msg
 #   Message1.msg
 #   Message2.msg
-# )
+)
 
 ## Generate services in the 'srv' folder
-# add_service_files(
-#   FILES
+add_service_files(
+  FILES
+  detection.srv
 #   Service1.srv
 #   Service2.srv
-# )
+)
 
 ## Generate actions in the 'action' folder
 # add_action_files(
@@ -170,6 +174,9 @@ ${catkin_INCLUDE_DIRS}
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
   src/bluerov2_dock/mission_control.py
+  src/bluerov2_dock/auto_dock.py
+  src/bluerov2_dock/mpc_hinsdale.py
+  src/bluerov2_dock/auv_hinsdale.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

@@ -3,6 +3,7 @@
 import cv2
 import rospy
 import rospkg
+import tf
 import time
 import numpy as np
 import os
@@ -13,12 +14,16 @@ sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/blue
 
 try:
     import video
+    from auto_dock import MPControl
 except:
     import bluerov2_dock.video as video
+
+from auto_dock import MPControl
 
 from std_msgs.msg import Header
 from geometry_msgs.msg import Pose
 from sensor_msgs.msg import Joy, BatteryState
+from nav_msgs.msg import Odometry
 from mavros_msgs.msg import OverrideRCIn, ManualControl, State
 
 from mavros_msgs.srv import CommandBool
@@ -42,22 +47,70 @@ class BlueROV2():
         #self.max_possible_pwm = 1900
         #self.min_possible_pwm = 1100
         
+        self.rov_odom = None
+        self.dock_odom = None
+        
         self.image_idx = 0
+        
+        self.mpc = MPControl()
 
         # Set up dictionary to store subscriber data
         self.sub_data_dict = {}
-        
+    
+    def run(self):
         self.setup_video()
         self.initialize_subscribers()
         self.initialize_publishers()
         self.initialize_services()
         # self.initialize_timers()
+        
+        """Run user code: activates video stream, grabs joystick data, 
+        enables control, allows for optional image logging"""
+        rate = rospy.Rate(10)
+        
+        while not rospy.is_shutdown():
+                
+            # Try to get video data
+            # try:
+            #     # Set up video output
+            #     frame = self.cam.frame()
+            #     frame = imutils.resize(frame, width=1200)
+            # except Exception as error:
+            #     rospy.logerr_throttle(10, '[BlueROV2][run] frame error:' + str(error))
 
+            # self.show_HUD(frame)
+            
+            # Try to get joystick axes and button data
+            try:
+                joy = self.sub_data_dict['joy']
+                # Activate joystick control
+                self.controller(joy)
+            except Exception as error:
+                rospy.logerr_throttle(10, '[BlueROV2][run] Controller error:' + str(error))
+
+            # if self.log_images and self.image_idx % 10 == 0:
+            #     fname = "img_%04d.png" %self.image_idx
+            #     rospack = rospkg.RosPack()
+            #     path = rospack.get_path("bluerov2_dock") + "/output/"
+            #     self.save(path, fname, frame)
+
+            # # Try to display video feed to screen
+            # try:
+            #     cv2.imshow('frame', frame)
+            #     cv2.waitKey(1)
+            # except Exception as error:
+            #     rospy.logerr_throttle(10, '[BlueROV2][run] imshow error:' + str(error))
+
+            self.image_idx += 1
+            rate.sleep()
+    
     def initialize_subscribers(self):
         # Set up subscribers
         self.joy_sub = rospy.Subscriber('/joy', Joy, self.store_sub_data, "joy")
         self.battery_sub = rospy.Subscriber('/mavros/battery', BatteryState, self.store_sub_data, "battery")
         self.state_subs = rospy.Subscriber('/mavros/state', State, self.store_sub_data, "state")    
+        self.rov_sub = rospy.Subscriber('/qualisys/ROV/odom', Odometry, self.rov_odom_cb)
+        self.dock_sub = rospy.Subscriber('/qualisys/Dock/odom', Odometry, self.dock_odom_cb)
     
     def initialize_publishers(self):
         # Set up publishers
@@ -71,6 +124,79 @@ class BlueROV2():
     def initialize_timers(self):
         rospy.Timer(rospy.Duration(0.1), self.timer_cb)
     
+    def rov_odom_cb(self, data):
+        try:
+            x = data.pose.pose.orientation.x
+            y = data.pose.pose.orientation.y
+            z = data.pose.pose.orientation.z
+            w = data.pose.pose.orientation.w
+            euler = tf.transformations.euler_from_quaternion((x,y,z,w))
+            roll = euler[0]
+            pitch = euler[1]
+            yaw = euler[2]
+            
+            self.rov_pose = np.zeros((6,1))
+            self.rov_pose[0][0] = data.pose.pose.position.x
+            self.rov_pose[1][0] = data.pose.pose.position.y
+            self.rov_pose[2][0] = data.pose.pose.position.z
+            self.rov_pose[3][0] = roll
+            self.rov_pose[4][0] = pitch
+            self.rov_pose[5][0] = yaw
+            
+            self.rov_twist = np.zeros((6,1))
+            self.rov_twist[0][0] = data.twist.twist.linear.x
+            self.rov_twist[1][0] = data.twist.twist.linear.y
+            self.rov_twist[2][0] = data.twist.twist.linear.z
+            self.rov_twist[3][0] = data.twist.twist.angular.x
+            self.rov_twist[4][0] = data.twist.twist.angular.y
+            self.rov_twist[5][0] = data.twist.twist.angular.z
+            
+            self.rov_odom = np.vstack((self.rov_pose, self.rov_twist))
+            
+        except Exception as e:
+            rospy.logerr_throttle(10, "[BlueROV2][rov_odom_cb] Not receiving ROV's odometry")
+        
+    def dock_odom_cb(self, data):
+        try:
+            x = data.pose.pose.orientation.x
+            y = data.pose.pose.orientation.y
+            z = data.pose.pose.orientation.z
+            w = data.pose.pose.orientation.w
+            euler = tf.transformations.euler_from_quaternion((x,y,z,w))
+            roll = euler[0]
+            pitch = euler[1]
+            yaw = euler[2]
+            
+            self.dock_pose = np.zeros((6,1))
+            self.dock_pose[0][0] = data.pose.pose.position.x
+            self.dock_pose[1][0] = data.pose.pose.position.y
+            self.dock_pose[2][0] = data.pose.pose.position.z
+            self.dock_pose[3][0] = roll
+            self.dock_pose[4][0] = pitch
+            self.dock_pose[5][0] = yaw
+            
+            self.dock_twist = np.zeros((6,1))
+            self.dock_twist[0][0] = data.twist.twist.linear.x
+            self.dock_twist[1][0] = data.twist.twist.linear.y
+            self.dock_twist[2][0] = data.twist.twist.linear.z
+            self.dock_twist[3][0] = data.twist.twist.angular.x
+            self.dock_twist[4][0] = data.twist.twist.angular.y
+            self.dock_twist[5][0] = data.twist.twist.angular.z
+            
+            self.dock_odom = np.vstack((self.dock_pose, self.dock_twist))
+            
+        except Exception as e:
+            rospy.logerr_throttle(10, "[BlueROV2][dock_odom_cb] Not receiving dock's odometry")
+        
+    def store_sub_data(self, data, key):
+        """
+        Generic callback function that stores subscriber data in the self.sub_data_dict dictionary
+        """
+        try:
+            self.sub_data_dict[key] = data
+        except Exception as e:
+            rospy.logerr_throttle(10, "[BlueROV2][store_sub_data] Not receiving {} data".format(key))
+    
     def setup_video(self):
         # Set up video feed
         self.cam = None
@@ -78,31 +204,39 @@ class BlueROV2():
         try:
             video_udp_port = rospy.get_param("/mission_control/video_udp_port")
             self.log_images = rospy.get_param("/mission_control/log_images")
-            #rospy.loginfo("video_udp_port: {}".format(video_udp_port))
+            rospy.loginfo("video_udp_port: {}".format(video_udp_port))
             self.cam = video.Video(video_udp_port)
-        except Exception as error:
-            rospy.loginfo(error)
+        except Exception as e:
+            rospy.logerr("[BlueROV2][setup_video] Failed to setup video through custom UDP port. Initializing through default port...")
             self.cam = video.Video()
     
-    def store_sub_data(self, data, key):
-        """
-        Generic callback function that stores subscriber data in the self.sub_data_dict dictionary
-        """
-        self.sub_data_dict[key] = data        
-    
-    def thrust_to_pwm(self):
-        pass
+    def thrust_to_pwm(self, u):
+        pwm = []
+        u = u.flatten()
+            
+        try:        
+            for i in range(6):
+                t = u[i] / 9.8
+                p = 0.1427*t**5 - 0.0655*t**4 - 5.6083*t**3 - 0.6309*t**2 + 140.5964*t + 1491.3739
+                pwm.append(p)
+        except Exception as e:
+            rospy.logerr_throttle(10, "[BlueROV2][thrust_to_pwm] Error in thrust to pwm conversion. Setting neutral pwm")
+            pwm = [self.neutral_pwm for _ in range(6)]
+            
+        return pwm
     
     def arm(self):
         """ Arm the vehicle and trigger the disarm
         """
         rospy.wait_for_service('/mavros/cmd/arming')
         self.arm_srv(True)
+        rospy.loginfo("[BlueROV2][arm] Arming vehicle")
 
         # Disarm is necessary when shutting down
         rospy.on_shutdown(self.disarm)
     
     def disarm(self):
+        rospy.loginfo("[BlueROV2][disarm] Disarming vehicle")
         self.arm_srv(False)
         rospy.wait_for_service('/mavros/cmd/arming')
         self.arm_srv(False)
@@ -114,20 +248,19 @@ class BlueROV2():
         
         Args: 
             joy: joystick subscription
-        """
-            
+        """            
         axes = joy.axes
         buttons = joy.buttons
-
+        
         # Switch into autonomous mode when button "A" is pressed
         # (Switches back into manual mode when the control sticks are moved)
         if buttons[0]:
             self.mode_flag = 'auto'
 
         # set arm and disarm (disarm default)
-        if buttons[6] == 1:  # "back" joystick button
+        if buttons[7] == 1:  # "back" joystick button
             self.disarm()
-        elif buttons[7] == 1:  # "start" joystick button
+        elif buttons[6] == 1:  # "start" joystick button
             self.arm()
 
         # turn on lights (can add other button functionality here, 
@@ -155,7 +288,7 @@ class BlueROV2():
 
         # set autonomous or manual control (manual control default)
         if self.mode_flag == 'auto':
-            self.auto_control(joy)
+            self.auto_control()
         else:
             self.manual_control(joy)
     
@@ -192,9 +325,35 @@ class BlueROV2():
             joy_button
         )
     
-    def auto_control(self, joy):
-        pass
+    def auto_control(self):
+        if self.rov_odom is None:
+            rospy.logerr_throttle(10, "[BlueROV2][auto_contol] ROV odom not initialized")
+            return
+        
+        if self.dock_odom is None:
+            rospy.logerr_throttle(10, "[BlueROV2][auto_contol] Dock odom not initialized")
+            return
+        
+        try:
+            u, converge_flag = self.mpc.run_mpc(self.rov_odom, self.dock_odom)
+        except Exception as e:
+            rospy.logerr_throttle(10, "[BlueROV2][auto_control] Error in MPC Computation")
+            return
+        
+        if converge_flag:
+            rospy.loginfo_throttle(10, "[BlueROV2][auto_control] ROV reached dock successfully! Disarming now...")
+            self.disarm()
+        else:
+            pwm = self.thrust_to_pwm(u)
+            for _ in range(len(pwm), 8):
+                pwm.append(0)
+            
+            for i in range(len(pwm)):
+                pwm[i] = max(min(pwm[i], self.max_pwm_manual), self.min_pwm_manual)
+
+            self.control_pub.publish(pwm)
     
+        
     def manual_control(self, joy):
         """
         Takes joystick input and sends appropriate pwm value to appropriate channels
@@ -217,28 +376,30 @@ class BlueROV2():
         
         # Create a copy of axes as a list instead of a tuple so you can modify the values
         # The RCOverrideOut mesage type also expects a list
-        temp_axes = list(axes)
-        temp_axes[3] *= -1  # fixes reversed yaw axis
-        temp_axes[0] *= -1  # fixes reversed lateral L/R axis
+        # temp_axes = list(axes)
+        # temp_axes[3] *= -1  # fixes reversed yaw axis
+        # temp_axes[0] *= -1  # fixes reversed lateral L/R axis
 
         # Remap joystick commands [-1.0 to 1.0] to RC_override commands [1100 to 1900]
         # adjusted_joy = [int(val*300 + self.neutral_pwm) for val in temp_axes]
-        # override = [self.neutral_pwm for _ in range(8)]
+        adjusted_joy = [int(val*300 + self.neutral_pwm) for val in axes]
+        override = [self.neutral_pwm for _ in range(18)]
         
-        override = [int(val*300 + self.neutral_pwm) for val in joy]
-        for _ in range(len(override), 8):
-            override.append(0)
+        # override = [int(val*300 + self.neutral_pwm) for val in axes]
+        # for _ in range(len(override), 8):
+        #     override.append(0)
 
         # Remap joystick channels to correct ROV channel 
-        # joy_mapping = [(0,5), (1,4), (3,3), (4,2), (7,7)]
+        joy_mapping = [(0,5), (1,4), (3,3), (4,2), (7,7)]
 
-        # for pair in joy_mapping:
-        #     override[pair[1]] = adjusted_joy[pair[0]]
+        for pair in joy_mapping:
+            override[pair[1]] = adjusted_joy[pair[0]]
 
         # Cap the pwm value (limits the ROV velocity)
         for i in range(len(override)):
             override[i] = max(min(override[i], self.max_pwm_manual), self.min_pwm_manual)
 
+        rospy.loginfo("[BlueROV2][manual_control] Joy PWM Values: {}".format(override[0:9]))
         # Send joystick data as rc output into rc override topic
         # print(override[0:9])
         self.control_pub.publish(override)
@@ -260,7 +421,7 @@ class BlueROV2():
             battery_voltage = self.sub_data_dict['battery'].voltage
             armed = self.sub_data_dict['state'].armed
         except Exception as error:
-            rospy.logerr('Get data error:' + str(error))
+            rospy.logerr_throttle(10, '[BlueROV2][show_HUD] Get data error:' + str(error))
 
         height, width = frame.shape[:2]
         offset = width // 50
@@ -302,9 +463,8 @@ class BlueROV2():
             # Set up video output
             frame = self.cam.frame()
             frame = imutils.resize(frame, width=1200)
-        
         except Exception as error:
-            rospy.logerr('frame error:' + str(error))
+            rospy.logerr_throttle(10, '[BlueROV2][timer_cb] frame error:' + str(error))
 
         self.show_HUD(frame)
         
@@ -312,10 +472,9 @@ class BlueROV2():
         try:
             joy = self.sub_data_dict['joy']
             # Activate joystick control
-            self.controller(joy, frame)
-                        
+            self.controller(joy)
         except Exception as error:
-            rospy.logerr('Controller error:' + str(error))
+            rospy.logerr_throttle(10, '[BlueROV2][timer_cb] Controller error:' + str(error))
 
         if self.log_images and self.image_idx % 10 == 0:
             fname = "img_%04d.png" %self.image_idx
@@ -328,19 +487,17 @@ class BlueROV2():
             cv2.imshow('frame', frame)
             cv2.waitKey(1)
         except Exception as error:
-            rospy.logerr('imshow error:' + str(error))
+            rospy.logerr_throttle(10, '[BlueROV2][timer_cb] imshow error:' + str(error))
 
         self.image_idx += 1
 
-    def main():
-        rospy.init_node('mission_control', anonymous=True)
-        try:
-            rospy.spin()
-        except KeyboardInterrupt:
-            print("shutting down the node")
-
 
 if __name__ == "__main__":
+    try:
+        rospy.init_node('mission_control', anonymous=True)
+    except KeyboardInterrupt:
+        rospy.logwarn("Shutting down the node")
+
     obj = BlueROV2()
-    BlueROV2.main()
+    obj.run()
         

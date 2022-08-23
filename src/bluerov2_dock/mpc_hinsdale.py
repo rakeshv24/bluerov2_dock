@@ -1,0 +1,160 @@
+import yaml
+import numpy as np
+from casadi import DM, SX, Function, integrator, Opti, evalf, mtimes, vertcat
+import sys
+
+sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/bluerov2_dock')
+
+from auv_hinsdale import AUV
+
+class MPC(object):
+    def __init__(self, auv, mpc_params):
+        self.auv = auv
+        self.dt = mpc_params["dt"]
+        self.log_quiet = mpc_params["quiet"]
+        self.horizon = mpc_params["horizon"]
+        self.thrusters = mpc_params["thrusters"]
+        self.model_type = mpc_params["full_body"]
+
+        self.P = np.diag(mpc_params["penalty"]["P"])
+        self.Q = np.diag(mpc_params["penalty"]["Q"])
+        self.R = np.diag(mpc_params["penalty"]["R"])
+
+        self.xmin = np.array(mpc_params["bounds"]["xmin"], dtype=np.float)
+        self.xmax = np.array(mpc_params["bounds"]["xmax"], dtype=np.float)
+        self.umin = np.array(mpc_params["bounds"]["umin"], dtype=np.float)
+        self.umax = np.array(mpc_params["bounds"]["umax"], dtype=np.float)
+        self.dumin = np.array(mpc_params["bounds"]["dumin"], dtype=np.float)
+        self.dumax = np.array(mpc_params["bounds"]["dumax"], dtype=np.float)
+        
+        self.wec_states = None
+
+        self.reset()
+        self.initialize_optimizer()
+
+    @classmethod
+    def load_params(cls, auv_filename, mpc_filename):
+        auv = AUV.load_params(auv_filename)
+
+        f = open(mpc_filename, "r")
+        mpc_params = yaml.load(f.read(), Loader=yaml.SafeLoader)
+        
+        return cls(auv, mpc_params)
+    
+    def reset(self):
+        self.previous_control = None
+        self.previous_state = None
+
+    def initialize_optimizer(self):
+        chi = SX.sym('chi', (18,1))
+        f_B = SX.sym('f_B', (3,1))
+        f_B_dot = SX.sym('f_B_dot', (3,1))
+        u = SX.sym('u', (self.thrusters,1))
+        full_body = SX.sym('full_body')
+        # t = SX.sym('t')
+        
+        # vehicle_dynamics = self.auv.compute_nonlinear_dynamics(x, u, t, full_body)
+        # f = Function('f',[x, u, t, full_body],[vehicle_dynamics])
+        
+        chi_dot = self.auv.compute_nonlinear_dynamics(chi, u, f_B=f_B, f_B_dot=f_B_dot, complete_model=full_body)
+        f = Function('f',[chi, u, f_B, f_B_dot, full_body],[chi_dot])
+        
+        T = self.dt*self.horizon
+        N = self.horizon
+        intg_options = {'tf': T/N,
+                        'simplify': True,
+                        'number_of_finite_elements': 4}
+
+        # dae = {'x': x, 'p': vertcat(u, t, full_body), 'ode': f(x,u,t,full_body)}
+        # intg = integrator('intg','rk', dae, intg_options)
+        # x_k_1 = intg(x0=x, p=vertcat(u, t, full_body))['xf']
+        # self.forward_dynamics = Function('func', [x, u, t, full_body], [x_k_1]) 
+        
+        dae = {'x': chi, 'p': vertcat(u, f_B, f_B_dot, full_body), 'ode': f(chi, u, f_B, f_B_dot, full_body)}
+        intg = integrator('intg','rk', dae, intg_options)
+        chi_next = intg(x0=chi, p=vertcat(u, f_B, f_B_dot, full_body))['xf']
+        self.forward_dynamics = Function('func', [chi, u, f_B, f_B_dot, full_body], [chi_next])
+    
+    def run_mpc(self, chi, x_ref):
+        return self.optimize(chi, x_ref)
+    
+    def optimize(self, chi, x_ref):
+        eta = chi[0:6, :]
+        
+        f_B = DM.zeros((3,1))
+        f_B_dot = DM.zeros((3,1))
+            
+        tf_B2I = self.auv.compute_transformation_matrix(eta)
+        R_B2I = evalf(tf_B2I[0:3, 0:3])
+        
+        xr = x_ref[0:6, :]
+        x0 = chi[0:12, :]
+        cost = 0
+        
+        opt = Opti()
+
+        X = opt.variable(18, self.horizon+1)
+        U = opt.variable(self.thrusters, self.horizon+1)
+        X0 = opt.parameter(12, 1)
+        flow_bf = opt.parameter(3, 1)
+        flow_acc_bf = opt.parameter(3, 1)
+        
+        # Only do horizon rolling if our horizon is greater than 1
+        if (self.horizon > 1) and (self.previous_control is not None):
+            # Shift all commands one over, since we executed the first control action
+            initial_guess_control = np.roll(self.previous_control, -1, axis=1)
+            initial_guess_state = np.roll(self.previous_state, -1, axis=1)
+
+            # Set the final column to the same as the second to last column
+            initial_guess_control[:,-1] = initial_guess_control[:,-2]
+            initial_guess_state[:,-1] = initial_guess_state[:,-2]
+
+            opt.set_initial(U, initial_guess_control)
+            opt.set_initial(X, initial_guess_state)
+            
+        for k in range(self.horizon):
+            # cost += (X[0:12, k] - xr).T @ self.P @ (X[0:12, k] - xr) 
+            cost += (U[:, k+1] - U[:, k]).T @ self.R @ (U[:, k+1] - U[:, k])
+            cost += (X[0:6, k] - xr).T @ self.P @ (X[0:6, k] - xr) 
+            # cost += (X[:, k] - X_r[:, k]).T @ self.P @ (X[:, k] - X_r[:, k]) 
+            # cost += (U[:, k]).T @ self.Q @ (U[:, k])
+            
+            opt.subject_to(X[:, k+1] == self.forward_dynamics(X[:, k], U[:, k], flow_bf, flow_acc_bf, self.model_type))
+            opt.subject_to(opt.bounded(self.xmin, X[0:12, k], self.xmax))
+            opt.subject_to(opt.bounded(self.umin, U[:, k], self.umax))
+            # opt.subject_to(opt.bounded(self.dumin, (U[:, k+1] - U[:, k]), self.dumax))
+            
+        # cost += (X[0:12, -1] - xr).T @ self.P @ (X[0:12, -1] - xr)
+        cost += (X[0:6, -1] - xr).T @ self.P @ (X[0:6, -1] - xr)
+        # cost += (X[:, -1] - X_r[:, -1]).T @ self.P @ (X[:, -1] - X_r[:, -1])
+        
+        opt.subject_to(opt.bounded(self.xmin, X[0:12, -1], self.xmax)) 
+        opt.subject_to(X[0:12, 0] == X0)
+        
+        opt.set_value(X0, x0)
+        opt.set_value(flow_bf, f_B)
+        opt.set_value(flow_acc_bf, f_B_dot)
+        
+        opt.minimize(cost)
+        
+        options = {"ipopt" : {}}
+        
+        if self.log_quiet:
+            options["ipopt"]["print_level"] = 0 
+            options["print_time"] = 0
+        else:
+            options['show_eval_warnings'] = True
+
+        opt.solver('ipopt', options)
+        sol = opt.solve()
+        
+        u_next = sol.value(U)[:,0:1]
+        # x_next = sol.value(X)[:,1:2]
+
+        self.previous_control = sol.value(U)
+        self.previous_state = sol.value(X)
+        inst_cost = sol.value(cost)
+        thrust_force = evalf(mtimes(self.auv.tam, u_next)).full()
+
+        return u_next, inst_cost, thrust_force
+        
