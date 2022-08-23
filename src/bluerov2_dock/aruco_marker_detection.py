@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import rospy
+import yaml
 import cv2
 import math
 import numpy as np
@@ -71,33 +72,23 @@ class Aruco():
         # self.result = cv2.VideoWriter('/home/darth/detection.avi', 
         #             cv2.VideoWriter_fourcc(*'MJPG'),
         #             10, (1280, 960))
-        
+        self.load_camera_config()
         self.initialize_subscribers_publishers()
         rospy.Timer(rospy.Duration(0.1), self.marker_detection)
-
+        
+    def load_camera_config(self):
+        filename = '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/config/in_water/calibrationdata/ost.yaml'
+        f = open(filename, "r")
+        camera_params = yaml.load(f.read(), Loader=yaml.SafeLoader)
+        self.cam_mat = np.array(camera_params['camera_matrix']['data'], np.float32).reshape(3, 3)
+        self.proj_mat = np.array(camera_params['projection_matrix']['data'], np.float32).reshape(3, 4)
+        self.dist_mat = np.array(camera_params['distortion_coefficients']['data'], np.float32).reshape(1, 5)
+    
     def initialize_subscribers_publishers(self):
         self.image_sub = rospy.Subscriber("/BlueROV2/video",
                                           Image, self.callback_image, queue_size=1)
-        self.camera_info_sub = rospy.Subscriber(
-            "/cv_camera/camera_info",
-            CameraInfo,
-            self.callback_image_info,
-            queue_size=1)
         self.pub = rospy.Publisher('/bluerov2_dock/marker_locations', marker_detect, queue_size=1)
         self.image_pub = rospy.Publisher('/bluerov2_dock/marker_detection', Image, queue_size=1)
-
-    def callback_image_info(self, data):
-        try:
-            self.proj_mat = np.array(list(data.P), np.float32)
-            self.proj_mat = self.proj_mat.reshape(3, 4)
-            self.dist_mat = np.array(list(data.D), np.float32)
-            self.dist_mat = self.dist_mat.reshape(1, 5)
-            self.cam_mat = np.array(list(data.K), np.float32)
-            self.cam_mat = self.cam_mat.reshape(3, 3)
-
-            self.camera_info_sub.unregister
-        except Exception as e:
-            rospy.logerr_throttle(10, "Callback Error: camera info")
 
     def callback_image(self, data):
         try:
@@ -128,40 +119,6 @@ class Aruco():
             z = 0
 
         return np.array([x, y, z], np.float32)
-
-    def rotation_matrix_from_euler_fixed(self, roll, pitch, yaw):
-        rotation_matrix = np.zeros(shape=(3, 3))
-        cp = math.cos(pitch)
-        sp = math.sin(pitch)
-        cr = math.cos(roll)
-        sr = math.sin(roll)
-        cy = math.cos(yaw)
-        sy = math.sin(yaw)  # print "cp,sp,cr,sr,cy,sy",cp,sp,cr,sr,cy,sy
-        rotation_matrix[0][0] = cp * cy
-        rotation_matrix[0][1] = (sr * sp * cy) - (cr * sy)
-        rotation_matrix[0][2] = (cr * sp * cy) + (sr * sy)
-        rotation_matrix[1][0] = cp * sy
-        rotation_matrix[1][1] = (sr * sp * sy) + (cr * cy)
-        rotation_matrix[1][2] = (cr * sp * sy) - (sr * cy)
-        rotation_matrix[2][0] = -sp
-        rotation_matrix[2][1] = sr * cp
-        rotation_matrix[2][2] = cr * cp
-        self.rot = np.array(rotation_matrix)
-
-    def pixel_to_meter(self, pts, prj, z):
-        #pts = pts.astype(float)
-        prj = np.linalg.pinv(prj)
-        real = np.zeros(shape=(4, 1))
-        pix = np.zeros(shape=(3, 1))
-        pix[0] = (pts[0]) * z
-        pix[1] = (pts[1]) * z
-        pix[2] = z
-        real = np.dot(prj, pix)
-        return real
-
-    def body_to_ned(self, pts):
-        q = np.dot(self.rot, [pts[0][0], pts[0][1], 0]).T
-        self.relative_ned = np.array(q)
 
     def marker_detection(self, timerEvent):
         try:
@@ -337,7 +294,6 @@ class Aruco():
                     pub_obj.header.stamp = rospy.Time.now()
                     self.pub.publish(pub_obj)
 
-                # print time.time() - q
                 cv2.imshow("marker", frame)
                 # self.result.write(frame)
                 # publish_image = Image()
@@ -375,3 +331,4 @@ if __name__ == '__main__':
         rospy.spin()
     except KeyboardInterrupt:
         print("shutting down the node")
+        
