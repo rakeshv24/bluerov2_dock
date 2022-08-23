@@ -16,6 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
     geometry_msgs
     mavros_msgs
     nav_msgs
+    message_generation
     tf)
 
 # find_package(octomap REQUIRED)
@@ -81,10 +82,14 @@ add_service_files(
 # )
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   std_msgs  # Or other packages containing msgs
-# )
+generate_messages(
+   DEPENDENCIES
+   std_msgs
+   geometry_msgs
+   sensor_msgs
+   nav_msgs
+   mavros_msgs
+ )
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -118,7 +123,7 @@ add_service_files(
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES bluerov2_dock
-#  CATKIN_DEPENDS other_catkin_pkg
+ CATKIN_DEPENDS roscpp rospy std_msgs message_runtime
 #  DEPENDS system_lib
 )
 
@@ -177,6 +182,7 @@ catkin_install_python(PROGRAMS
   src/bluerov2_dock/auto_dock.py
   src/bluerov2_dock/mpc_hinsdale.py
   src/bluerov2_dock/auv_hinsdale.py
+  src/bluerov2_dock/aruco_marker_detection.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

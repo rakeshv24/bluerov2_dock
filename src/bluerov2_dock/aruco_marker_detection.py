@@ -2,13 +2,14 @@
 
 import rospy
 import cv2
-import time as time
 import math
-import tf
 import numpy as np
 from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import Image, CameraInfo
 from std_msgs.msg import Header
+import sys
+
+sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/bluerov2_dock')
 
 from bluerov2_dock.msg import marker_pose, marker_detect
 from bluerov2_dock.srv import detection
