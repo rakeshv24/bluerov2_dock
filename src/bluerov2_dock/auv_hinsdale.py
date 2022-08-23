@@ -18,10 +18,6 @@ class AUV(object):
         self.z_b = vehicle_dynamics["z_b"]
         self.cog_to_cob = self.z_g - self.z_b
         self.neutral_bouy = vehicle_dynamics["neutral_bouy"]
-        self.linear_model = {'A':SX.zeros((12,12)),
-                             'B':SX.zeros((12,8))}
-        self.curr_timestep = 0.0
-        self.ocean_current_data = []
         
         # Precompute the total mass matrix (w/added mass) inverted for future dynamic calls
         self.mass_inv = inv(self.rb_mass + self.added_mass)
@@ -146,21 +142,8 @@ class AUV(object):
         tf_mtx = self.compute_transformation_matrix(eta) # Gets the transformation matrix to convert from Body to NED frame
         tf_mtx_inv = inv(tf_mtx)
         
-        omega = 0.0001
-        # nu_c_ned = SX.zeros((6,1))
-        # nu_c_ned[0, 0] = 0.5
-        # nu_c_ned[0, 0] = 0.1*sin(omega * t)
-        # nu_c_ned[1, 0] = 0.25*cos(omega * t)
-        # self.ocean_current_data.append(nu_c_ned) 
-
-        # nu_c = SX.zeros(6,1)
         nu_c = vertcat(f_B, SX.zeros((3,1)))
-        # nu_c = vertcat(f, SX.zeros(3,1))
-        # nu_c_dot = SX.zeros((6,1))
         
-        # Converts ocean current disturbances to Body frame
-        # nu_c = mtimes(tf_mtx_inv, nu_c_ned)
-
         # Computes total vehicle velocity
         nu = nu_r + nu_c
     
@@ -170,7 +153,6 @@ class AUV(object):
         nu_c_dot = if_else(f_est,
                            mtimes(skew_mtx, nu_c),
                            vertcat(f_B_dot, SX.zeros((3,1))))
-        # nu_c_dot = jacobian(nu_c, t)
         
         # Kinematic Equation
         # Convert the relative velocity from Body to NED and add it with the ocean current velocity in NED to get the total velocity of the vehicle in NED
@@ -207,10 +189,10 @@ class AUV(object):
         # next_eta = eta + eta_dot * dt
         # next_nu = nu + nu_dot * dt
 
-        # x_dot = vertcat(eta_dot, nu_r_dot)
-        chi_dot = vertcat(eta_dot, nu_r_dot, nu_c_dot)
+        x_dot = vertcat(eta_dot, nu_r_dot)
+        # chi_dot = vertcat(eta_dot, nu_r_dot, nu_c_dot)
         # x_dot = vertcat(eta_dot, nu_dot)
         # x_k_1 = vertcat(next_eta, next_nu)
                     
-        return chi_dot
+        return x_dot
     

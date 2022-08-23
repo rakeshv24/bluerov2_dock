@@ -46,58 +46,49 @@ class MPC(object):
         self.previous_state = None
 
     def initialize_optimizer(self):
-        chi = SX.sym('chi', (18,1))
-        f_B = SX.sym('f_B', (3,1))
-        f_B_dot = SX.sym('f_B_dot', (3,1))
+        x = SX.sym('x', (12,1))
+        # f_B = SX.sym('f_B', (3,1))
+        # f_B_dot = SX.sym('f_B_dot', (3,1))
         u = SX.sym('u', (self.thrusters,1))
         full_body = SX.sym('full_body')
-        # t = SX.sym('t')
         
-        # vehicle_dynamics = self.auv.compute_nonlinear_dynamics(x, u, t, full_body)
-        # f = Function('f',[x, u, t, full_body],[vehicle_dynamics])
-        
-        chi_dot = self.auv.compute_nonlinear_dynamics(chi, u, f_B=f_B, f_B_dot=f_B_dot, complete_model=full_body)
-        f = Function('f',[chi, u, f_B, f_B_dot, full_body],[chi_dot])
+        x_dot = self.auv.compute_nonlinear_dynamics(x, u, complete_model=full_body)
+        f = Function('f',[x, u, full_body],[x_dot])
         
         T = self.dt*self.horizon
         N = self.horizon
         intg_options = {'tf': T/N,
                         'simplify': True,
                         'number_of_finite_elements': 4}
-
-        # dae = {'x': x, 'p': vertcat(u, t, full_body), 'ode': f(x,u,t,full_body)}
-        # intg = integrator('intg','rk', dae, intg_options)
-        # x_k_1 = intg(x0=x, p=vertcat(u, t, full_body))['xf']
-        # self.forward_dynamics = Function('func', [x, u, t, full_body], [x_k_1]) 
         
-        dae = {'x': chi, 'p': vertcat(u, f_B, f_B_dot, full_body), 'ode': f(chi, u, f_B, f_B_dot, full_body)}
+        dae = {'x': x, 'p': vertcat(u, full_body), 'ode': f(x, u, full_body)}
         intg = integrator('intg','rk', dae, intg_options)
-        chi_next = intg(x0=chi, p=vertcat(u, f_B, f_B_dot, full_body))['xf']
-        self.forward_dynamics = Function('func', [chi, u, f_B, f_B_dot, full_body], [chi_next])
+        x_next = intg(x0=x, p=vertcat(u, full_body))['xf']
+        self.forward_dynamics = Function('func', [x, u, full_body], [x_next])
     
-    def run_mpc(self, chi, x_ref):
-        return self.optimize(chi, x_ref)
+    def run_mpc(self, x, x_ref):
+        return self.optimize(x, x_ref)
     
-    def optimize(self, chi, x_ref):
-        eta = chi[0:6, :]
+    def optimize(self, x, x_ref):
+        eta = x[0:6, :]
         
-        f_B = DM.zeros((3,1))
-        f_B_dot = DM.zeros((3,1))
+        # f_B = DM.zeros((3,1))
+        # f_B_dot = DM.zeros((3,1))
             
         tf_B2I = self.auv.compute_transformation_matrix(eta)
         R_B2I = evalf(tf_B2I[0:3, 0:3])
         
         xr = x_ref[0:6, :]
-        x0 = chi[0:12, :]
+        x0 = x[0:6, :]
         cost = 0
         
         opt = Opti()
 
-        X = opt.variable(18, self.horizon+1)
+        X = opt.variable(12, self.horizon+1)
         U = opt.variable(self.thrusters, self.horizon+1)
-        X0 = opt.parameter(12, 1)
-        flow_bf = opt.parameter(3, 1)
-        flow_acc_bf = opt.parameter(3, 1)
+        X0 = opt.parameter(6, 1)
+        # flow_bf = opt.parameter(3, 1)
+        # flow_acc_bf = opt.parameter(3, 1)
         
         # Only do horizon rolling if our horizon is greater than 1
         if (self.horizon > 1) and (self.previous_control is not None):
@@ -119,7 +110,7 @@ class MPC(object):
             # cost += (X[:, k] - X_r[:, k]).T @ self.P @ (X[:, k] - X_r[:, k]) 
             # cost += (U[:, k]).T @ self.Q @ (U[:, k])
             
-            opt.subject_to(X[:, k+1] == self.forward_dynamics(X[:, k], U[:, k], flow_bf, flow_acc_bf, self.model_type))
+            opt.subject_to(X[:, k+1] == self.forward_dynamics(X[:, k], U[:, k], self.model_type))
             opt.subject_to(opt.bounded(self.xmin, X[0:12, k], self.xmax))
             opt.subject_to(opt.bounded(self.umin, U[:, k], self.umax))
             # opt.subject_to(opt.bounded(self.dumin, (U[:, k+1] - U[:, k]), self.dumax))
@@ -129,11 +120,11 @@ class MPC(object):
         # cost += (X[:, -1] - X_r[:, -1]).T @ self.P @ (X[:, -1] - X_r[:, -1])
         
         opt.subject_to(opt.bounded(self.xmin, X[0:12, -1], self.xmax)) 
-        opt.subject_to(X[0:12, 0] == X0)
+        opt.subject_to(X[0:6, 0] == X0)
         
         opt.set_value(X0, x0)
-        opt.set_value(flow_bf, f_B)
-        opt.set_value(flow_acc_bf, f_B_dot)
+        # opt.set_value(flow_bf, f_B)
+        # opt.set_value(flow_acc_bf, f_B_dot)
         
         opt.minimize(cost)
         
