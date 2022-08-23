@@ -252,6 +252,7 @@ class BlueROV2():
                 values.append(round(p))
                 
             pwm = [values[4], values[3], values[2], values[5], values[0], values[1]]
+            
         except Exception as e:
             rospy.logerr_throttle(10, "[BlueROV2][thrust_to_pwm] Error in thrust to pwm conversion. Setting neutral pwm")
             pwm = [self.neutral_pwm for _ in range(6)]
