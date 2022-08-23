@@ -57,11 +57,12 @@ class Aruco():
                             5: 0.25}
         self.marker_offset = {0: [],
                               1: [],
-                              2: [],
-                              3: [],
-                              4: [],
-                              5: []}
-        self.camera_offset = []
+                              2: [0.0675, -0.08],
+                              3: [-0.04875, 0.055],
+                              4: [0.075, 0.0575],
+                              5: [-0.065, -0.0575]}
+        self.camera_offset = [-0.16, 0.06]
+        self.dock_center_offset = 0.32
         
         self.prev_marker = 10000
         self.counter = 0
@@ -70,11 +71,6 @@ class Aruco():
         # self.result = cv2.VideoWriter('/home/darth/detection.avi', 
         #             cv2.VideoWriter_fourcc(*'MJPG'),
         #             10, (1280, 960))
-        
-        # self.object_height = 0.45
-        # self.gimbal_link = 0.324
-        # self.aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_ARUCO_ORIGINAL)
-        # self.arucoParams = cv2.aruco.DetectorParameters_create()
         
         self.initialize_subscribers_publishers()
         rospy.Timer(rospy.Duration(0.1), self.marker_detection)
@@ -106,7 +102,6 @@ class Aruco():
     def callback_image(self, data):
         try:
             self.image = self.bridge.imgmsg_to_cv2(data, desired_encoding="bgr8")
-            #self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.image, "bgr8"))
         except CvBridgeError as e:
             print(e)
 
@@ -310,9 +305,12 @@ class Aruco():
                     # Relative Position
                     # TODO: Fix the orientation of the translation and rotational vecs
                     body_frame = np.zeros(shape=(1, 3))
-                    body_frame[0][0] = tvec[0][0][0] - self.marker_offset[ids[target_index][0]][0] - self.camera_offset[0]
-                    body_frame[0][1] = tvec[0][0][1] - self.marker_offset[ids[target_index][0]][1] - self.camera_offset[1]
-                    body_frame[0][2] = tvec[0][0][2] - self.marker_offset[ids[target_index][0]][2] - self.camera_offset[2]
+                    # body_frame[0][0] = tvec[0][0][0] - self.marker_offset[ids[target_index][0]][0] - self.camera_offset[0]
+                    # body_frame[0][1] = tvec[0][0][1] - self.marker_offset[ids[target_index][0]][1] - self.camera_offset[1]
+                    # body_frame[0][2] = tvec[0][0][2] - self.marker_offset[ids[target_index][0]][2] - self.camera_offset[2] 
+                    body_frame[0][0] = tvec[0][0][0]
+                    body_frame[0][1] = tvec[0][0][1]
+                    body_frame[0][2] = tvec[0][0][2]
                     
                     # if self.counter1 > 0 and self.counter1 < 20:
                     #     pub_obj.marker_switch = True
@@ -359,7 +357,7 @@ class Aruco():
 
         if req.det_flag:
             self.service_flag = True
-            rospy.loginfo("Detection model is up and running!")
+            rospy.loginfo("Detection is up and running!")
             return True, "Detection Started"
         else:
             self.result.release()
@@ -368,10 +366,10 @@ class Aruco():
             return True, "Detection Stopped"
 
 
-def main():
+if __name__ == '__main__':
     rospy.init_node('detection', anonymous=True)
     obj = Aruco()
-    d = rospy.Service('precision_landing/control_detection', detection, obj.detect_callback)
+    d = rospy.Service('bluerov2_dock/control_detection', detection, obj.detect_callback)
 
     try:
         rospy.spin()
