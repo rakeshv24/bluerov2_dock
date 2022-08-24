@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/bluerov2_dock')
 
-from casadi import evalf, SX, vertcat
+from casadi import evalf
 from auv_hinsdale import AUV
 from mpc_hinsdale import MPC
 import pickle
