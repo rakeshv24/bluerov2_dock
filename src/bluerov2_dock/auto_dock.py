@@ -2,6 +2,7 @@ import os
 import time
 import numpy as np
 import sys
+import rospy
 
 sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/bluerov2_dock')
 
@@ -15,6 +16,9 @@ class MPControl():
     def __init__(self):    
         auv_yaml = os.path.join("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/config/auv_bluerov2.yaml")
         mpc_yaml = os.path.join("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/config/mpc_bluerov2.yaml")
+        
+        # auv_yaml = os.path.join("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/config/auv_bluerov2_heavy.yaml")
+        # mpc_yaml = os.path.join("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/config/mpc_bluerov2_heavy.yaml")
 
         # Change these values as desired
         self.tolerance = 0.25
@@ -54,19 +58,19 @@ class MPControl():
     
     def run_mpc(self, x0, xr):
         process_t0 = time.perf_counter()
-        self.distance = np.linalg.norm(x0 - xr)
+        self.distance = np.linalg.norm(x0[0:6, :] - xr[0:6, :])
         
         x0[3:6, :] = self.wrap_pi2negpi(x0[3:6, :])
         xr[5, :] += np.pi
         xr[3:6, :] = self.wrap_pi2negpi(xr[3:6, :])
         
-        print("X0: {}".format(x0[0:6, :]))
-        print("Xr: {}".format(xr[0:6, :]))
+        # print("X0: {}".format(x0[0:6, :]))
+        # print("Xr: {}".format(xr[0:6, :]))
 
         if self.distance < self.tolerance:
             return np.zeros((8,1)), True
         
-        u, inst_cost, thrust_force = self.mpc.run_mpc(x0, xr)
+        u, inst_cost = self.mpc.run_mpc(x0, xr)
         # print(u)
         
         x_dot = self.auv.compute_nonlinear_dynamics(x0, u, complete_model=True)
@@ -88,7 +92,7 @@ class MPControl():
         self.nav_data["analysis"]["eta_dot"][:, self.time_id] = x_dot[0:6, :].flatten()
         self.nav_data["analysis"]["nu_r_dot"][:, self.time_id] = x_dot[6:12, :].flatten()
         self.nav_data["analysis"]["inst_cost"][:, self.time_id] = inst_cost
-        self.nav_data["analysis"]["thrust_force"][:, self.time_id] = thrust_force.flatten()
+        # self.nav_data["analysis"]["thrust_force"][:, self.time_id] = thrust_force.flatten()
         
         self.comp_time += time.perf_counter() - process_t0
         
@@ -96,7 +100,7 @@ class MPControl():
         print(f"Computation Time = {round(self.comp_time,3)}s")
         print("----------------------------------------------")
         print(f"MPC Contol Input: {np.round(u, 3).T}")
-        print(f"Thrust Force: {np.round(thrust_force, 3).T}")
+        # print(f"Thrust Force: {np.round(thrust_force, 3).T}")
         print("----------------------------------------------")
         print(f"Initial Vehicle Pose: {np.round(x0[0:6], 3).T}")
         print(f"Initial Vehicle Velocity: {np.round(x0[6:12], 3).T}")
@@ -121,7 +125,7 @@ class MPControl():
         
         self.time_id += 1
                 
-        return thrust_force, False
+        return u, False
         
     def log_data(self, path):
         with open(path + '/opt_data.pkl', 'wb') as f:

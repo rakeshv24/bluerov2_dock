@@ -179,6 +179,7 @@ ${catkin_INCLUDE_DIRS}
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
   src/bluerov2_dock/mission_control.py
+  src/bluerov2_dock/publish_node.py
   src/bluerov2_dock/auto_dock.py
   src/bluerov2_dock/mpc_hinsdale.py
   src/bluerov2_dock/auv_hinsdale.py

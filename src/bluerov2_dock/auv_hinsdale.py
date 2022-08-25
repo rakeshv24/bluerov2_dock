@@ -1,5 +1,5 @@
 import yaml
-from casadi import SX, sin, cos, tan, skew, vertcat, mtimes, fabs, diag, inv, if_else
+from casadi import SX, sin, cos, tan, skew, vertcat, mtimes, fabs, diag, inv, if_else, exp
 
 class AUV(object):
     def __init__(self, vehicle_dynamics):
@@ -9,6 +9,7 @@ class AUV(object):
         self.lin_damp =  vehicle_dynamics["lin_damp"]
         self.quad_damp = vehicle_dynamics["quad_damp"]
         self.tam =  vehicle_dynamics["tam"]
+        self.tcm =  vehicle_dynamics["tcm"]
         self.inertial_terms = vehicle_dynamics["inertial_terms"]
         self.inertial_skew = vehicle_dynamics["inertial_skew"]
         self.r_gb_skew = vehicle_dynamics["r_gb_skew"]
@@ -49,6 +50,7 @@ class AUV(object):
         vehicle_dynamics["lin_damp"] = -diag(SX(params['d_lin']))
         vehicle_dynamics["quad_damp"] = -diag(SX(params['d_quad']))
         vehicle_dynamics["tam"] = SX(params['tam'])
+        vehicle_dynamics["tcm"] = SX(params['tcm'])
         vehicle_dynamics["r_gb_skew"] = skew_r_gb
         vehicle_dynamics["inertial_skew"] = skew_I
         vehicle_dynamics["inertial_terms"] = I_b
@@ -165,7 +167,13 @@ class AUV(object):
         # eta_dot = mtimes(tf_mtx, (nu_r + nu_c))
         
         # Force computation
-        thruster_force = mtimes(self.tam, u)
+        # normalized_force = mtimes(self.tam, u)
+        # thrust_force = mtimes(self.tam, u)
+        # thrust_force = (80.0 / (1 + exp(-4 * (normalized_force ** 3)))) - 40.0
+        # total_force = mtimes(self.tcm, thrust_force)
+        # total_force = mtimes(self.tcm, u)
+        total_force = u
+        
         restorive_force = self.compute_restorive_force(eta)
         damping_force = self.compute_damping_force(nu_r)
         coriolis_force_rb = self.compute_C_RB_force(nu)
@@ -179,8 +187,8 @@ class AUV(object):
         # nu_r_dot = mtimes(self.mass_inv, (thruster_force - mtimes((coriolis_force_rel + damping_force), nu_r) - restorive_force))
         
         nu_r_dot = if_else(complete_model,
-                           mtimes(self.mass_inv, (thruster_force - mtimes(self.rb_mass, nu_c_dot) - mtimes(coriolis_force_rb, nu) - mtimes(coriolis_force_added, nu_r) - mtimes(damping_force, nu_r) - restorive_force)),
-                           mtimes(self.mass_inv, (thruster_force - mtimes(coriolis_force_RB_A, nu_r) - mtimes(damping_force, nu_r) - restorive_force))
+                           mtimes(self.mass_inv, (total_force - mtimes(self.rb_mass, nu_c_dot) - mtimes(coriolis_force_rb, nu) - mtimes(coriolis_force_added, nu_r) - mtimes(damping_force, nu_r) - restorive_force)),
+                           mtimes(self.mass_inv, (total_force - mtimes(coriolis_force_RB_A, nu_r) - mtimes(damping_force, nu_r) - restorive_force))
                            )
         
         # nu_dot = mtimes(self.mass_inv, (thruster_force + mtimes(self.added_mass, nu_c_dot) - mtimes(coriolis_force_rb, nu) - mtimes(coriolis_force_added, nu_r) - mtimes(damping_force, nu_r) - restorive_force))
