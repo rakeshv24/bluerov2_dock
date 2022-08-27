@@ -2,3 +2,6 @@
 *.png
 *.pyc
 /model
+/output/rosbags
+/output/terminal
+

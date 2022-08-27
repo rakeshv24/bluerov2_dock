@@ -83,6 +83,7 @@ class MPC(object):
         tf_B2I = self.auv.compute_transformation_matrix(eta)
         R_B2I = evalf(tf_B2I[0:3, 0:3])
         
+        # xr = x_ref[0:3, :]
         # xr = x_ref[0:6, :]
         # x0 = x[0:6, :]
         xr = x_ref[0:12, :]
@@ -113,9 +114,9 @@ class MPC(object):
             opt.set_initial(X, initial_guess_state)
             
         for k in range(self.horizon):
+            # cost += (X[0:3, k] - xr).T @ self.P @ (X[0:3, k] - xr) 
             # cost += (X[0:6, k] - xr).T @ self.P @ (X[0:6, k] - xr) 
             cost += (X[0:12, k] - xr).T @ self.P @ (X[0:12, k] - xr) 
-            # cost += (X[:, k] - X_r[:, k]).T @ self.P @ (X[:, k] - X_r[:, k]) 
             cost += (U[:, k+1] - U[:, k]).T @ self.R @ (U[:, k+1] - U[:, k])
             # cost += (U[:, k]).T @ self.Q @ (U[:, k])
             
@@ -124,9 +125,9 @@ class MPC(object):
             opt.subject_to(opt.bounded(self.umin, U[:, k], self.umax))
             # opt.subject_to(opt.bounded(self.dumin, (U[:, k+1] - U[:, k]), self.dumax))
             
+        # cost += (X[0:3, -1] - xr).T @ self.P @ (X[0:3, -1] - xr)
         # cost += (X[0:6, -1] - xr).T @ self.P @ (X[0:6, -1] - xr)
         cost += (X[0:12, -1] - xr).T @ self.P @ (X[0:12, -1] - xr)
-        # cost += (X[:, -1] - X_r[:, -1]).T @ self.P @ (X[:, -1] - X_r[:, -1])
         
         opt.subject_to(opt.bounded(self.xmin, X[0:12, -1], self.xmax)) 
         # opt.subject_to(X[0:6, 0] == X0)

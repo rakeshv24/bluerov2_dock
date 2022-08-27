@@ -19,11 +19,12 @@ except:
 
 from auto_dock import MPControl
 
-from std_msgs.msg import Header
-from geometry_msgs.msg import Pose
-from sensor_msgs.msg import Joy, BatteryState
+from std_msgs.msg import Header, Float32MultiArray, MultiArrayDimension
+from geometry_msgs.msg import Pose, Twist
+from sensor_msgs.msg import Joy, BatteryState, FluidPressure
 from nav_msgs.msg import Odometry
 from mavros_msgs.msg import OverrideRCIn, ManualControl, State
+from bluerov2_dock.msg import marker_detect
 
 from mavros_msgs.srv import CommandBool
 
@@ -51,6 +52,15 @@ class BlueROV2():
         self.rov_odom = None
         self.dock_odom = None
         
+        self.first_odom_flag = True
+        self.previous_rov_pose = None
+        self.rov_pose_sub_time = None
+        
+        self.first_fid_flag = True
+        self.previous_fid_pose = None
+        self.fid_pose_sub_time = None
+        self.rel_rov_pose = None
+        
         self.image_idx = 0
         
         self.load_pwm_lookup()
@@ -60,7 +70,7 @@ class BlueROV2():
         # Set up dictionary to store subscriber data
         self.sub_data_dict = {}
         
-        self.setup_video()
+        # self.setup_video()
         self.initialize_subscribers()
         self.initialize_publishers()
         self.initialize_services()
@@ -91,12 +101,17 @@ class BlueROV2():
         self.state_subs = rospy.Subscriber('/mavros/state', State, self.store_sub_data, "state")    
         self.rov_sub = rospy.Subscriber('/qualisys/ROV/odom', Odometry, self.rov_odom_cb)
         self.dock_sub = rospy.Subscriber('/qualisys/Dock/odom', Odometry, self.dock_odom_cb)
+        self.fid_sub = rospy.Subscriber('/bluerov2_dock/rel_dock_center', marker_detect, self.fiducial_cb)
+        self.pressure_sub = rospy.Subscriber('mavros/imu/static_pressure', FluidPressure, self.pressure_cb)
     
     def initialize_publishers(self):
         # Set up publishers
         # self.control_pub = rospy.Publisher('/mavros/rc/override', OverrideRCIn, queue_size=1)
         self.control_pub = rospy.Publisher('/bluerov2_dock/pwm', OverrideRCIn, queue_size=1)
+        self.mpc_output = rospy.Publisher('/bluerov2_dock/mpc', Float32MultiArray, queue_size=1)
         self.lights_pub = rospy.Publisher('/mavros/manual_control/send', ManualControl, queue_size=1)
+        self.mpc_rov_odom_pub = rospy.Publisher('/mpc/rov_odom', Float32MultiArray, queue_size=1)
+        self.mpc_xr_pub = rospy.Publisher('/mpc/xr', Float32MultiArray, queue_size=1)
 
     def initialize_services(self):
         # Initialize arm/disarm service
@@ -104,6 +119,43 @@ class BlueROV2():
 
     def initialize_timers(self):
         rospy.Timer(rospy.Duration(0.05), self.timer_cb)
+        
+    def wrap_pi2negpi(self, angle):
+        return ((angle + np.pi) % (2 * np.pi)) - np.pi
+    
+    def fiducial_cb(self, data):
+        try:
+            self.rel_rov_pose = np.zeros((12,1))
+            self.rel_rov_pose[0][0] = -data.locations[0].x
+            self.rel_rov_pose[1][0] = -data.locations[0].y
+            self.rel_rov_pose[2][0] = -data.locations[0].z
+            # self.rel_rov_pose[5][0] = data.locations[0].yaw
+            
+            if self.first_fid_flag:
+                self.fid_pose_sub_time = rospy.Time.now().to_sec()
+                self.previous_fid_pose = self.rel_rov_pose
+                self.first_fid_flag = False
+            else:
+                del_time = rospy.Time.now().to_sec() - self.fid_pose_sub_time
+                pose_diff = self.rel_rov_pose[0:6, :] - self.previous_fid_pose[0:6, :]
+                velocities = pose_diff / del_time
+                
+                # self.rel_rov_pose[6:12, :] = velocities
+                
+                self.fid_pose_sub_time = rospy.Time.now().to_sec()
+                self.previous_fid_pose = self.rel_rov_pose
+            
+        except Exception as e:
+            rospy.logerr_throttle(10, "[BlueROV2][fiducial_cb] Not receiving fiducial readings" + str(e))
+    
+    def pressure_cb(self, data):
+        try:
+            pressure = data.fluid_pressure
+            rho = 1000
+            g = 9.8
+            self.depth = pressure / (rho * g)
+        except Exception as e:
+            rospy.logerr_throttle(10, "[BlueROV2][pressure_cb] Not receiving pressure readings")
     
     def rov_odom_cb(self, data):
         try:
@@ -124,15 +176,35 @@ class BlueROV2():
             self.rov_pose[4][0] = pitch
             self.rov_pose[5][0] = yaw
             
-            self.rov_twist = np.zeros((6,1))
-            self.rov_twist[0][0] = data.twist.twist.linear.x
-            self.rov_twist[1][0] = data.twist.twist.linear.y
-            self.rov_twist[2][0] = data.twist.twist.linear.z
-            self.rov_twist[3][0] = data.twist.twist.angular.x
-            self.rov_twist[4][0] = data.twist.twist.angular.y
-            self.rov_twist[5][0] = data.twist.twist.angular.z
+            self.rov_pose[3:6, :] = self.wrap_pi2negpi(self.rov_pose[3:6, :])
             
-            self.rov_odom = np.vstack((self.rov_pose, self.rov_twist))
+            if self.first_odom_flag:
+                self.rov_pose_sub_time = data.header.stamp.to_sec()
+                self.previous_rov_pose = self.rov_pose
+                self.first_odom_flag = False
+                # print("I'm here")
+            else:
+                del_time = data.header.stamp.to_sec() - self.rov_pose_sub_time
+                rov_pose_diff = self.rov_pose - self.previous_rov_pose
+                rov_twist = rov_pose_diff / del_time
+                
+                self.rov_twist = rov_twist
+                
+                self.rov_pose_sub_time = time.time()
+                self.previous_rov_pose = self.rov_pose
+                
+                self.rov_odom = np.vstack((self.rov_pose, self.rov_twist))
+                # print(self.rov_odom)
+            
+            # self.rov_twist = np.zeros((6,1))
+            # self.rov_twist[0][0] = data.twist.twist.linear.x
+            # self.rov_twist[1][0] = data.twist.twist.linear.y
+            # self.rov_twist[2][0] = data.twist.twist.linear.z
+            # self.rov_twist[3][0] = data.twist.twist.angular.x
+            # self.rov_twist[4][0] = data.twist.twist.angular.y
+            # self.rov_twist[5][0] = data.twist.twist.angular.z
+            
+            # self.rov_odom = np.vstack((self.rov_pose, self.rov_twist))
             
         except Exception as e:
             rospy.logerr_throttle(10, "[BlueROV2][rov_odom_cb] Not receiving ROV's odometry")
@@ -178,18 +250,18 @@ class BlueROV2():
         except Exception as e:
             rospy.logerr_throttle(10, "[BlueROV2][store_sub_data] Not receiving {} data".format(key))
     
-    def setup_video(self):
-        # Set up video feed
-        self.cam = None
-        self.log_images = False
-        try:
-            video_udp_port = rospy.get_param("/mission_control/video_udp_port")
-            self.log_images = rospy.get_param("/mission_control/log_images")
-            rospy.loginfo("video_udp_port: {}".format(video_udp_port))
-            self.cam = video.Video(video_udp_port)
-        except Exception as e:
-            rospy.logerr("[BlueROV2][setup_video] Failed to setup video through custom UDP port. Initializing through default port...")
-            self.cam = video.Video()
+    # def setup_video(self):
+    #     # Set up video feed
+    #     self.cam = None
+    #     self.log_images = False
+    #     try:
+    #         video_udp_port = rospy.get_param("/mission_control/video_udp_port")
+    #         self.log_images = rospy.get_param("/mission_control/log_images")
+    #         rospy.loginfo("video_udp_port: {}".format(video_udp_port))
+    #         self.cam = video.Video(video_udp_port)
+    #     except Exception as e:
+    #         rospy.logerr("[BlueROV2][setup_video] Failed to setup video through custom UDP port. Initializing through default port...")
+    #         self.cam = video.Video()
     
     def thrust_to_pwm(self, thrust):
         values = []
@@ -202,6 +274,8 @@ class BlueROV2():
         try:        
             for i in range(6):
                 t = thrust[i] / 9.8
+                t = np.round(t, 3)
+                # print(t)
                 
                 # p = 0.1427*t**5 - 0.0655*t**4 - 5.6083*t**3 - 0.6309*t**2 + 140.5964*t + 1491.3739
                 
@@ -214,7 +288,8 @@ class BlueROV2():
                 
                 values.append(round(p))
                 
-            pwm = [values[4], values[3], values[2], values[5], values[0], values[1]]
+            # pwm = [values[4], values[3], values[2], values[5], values[0], values[1]]
+            pwm = [self.neutral_pwm, self.neutral_pwm, values[2], self.neutral_pwm, values[0], values[1]]
             # pwm = [self.neutral_pwm, self.neutral_pwm, values[2], values[5], values[0], values[1]]
             # pwm = [self.neutral_pwm, self.neutral_pwm, self.neutral_pwm, self.neutral_pwm, 1900, self.neutral_pwm]
             
@@ -336,45 +411,103 @@ class BlueROV2():
             self.mode_flag = 'manual'
             # Immediately exit the function
             return
-
-        if self.rov_odom is None:
+        
+        # if self.rov_odom is None:
+        #     rospy.logerr_throttle(10, "[BlueROV2][auto_contol] ROV odom not initialized")
+        #     return
+        
+        if self.rel_rov_pose is None:
             rospy.logerr_throttle(10, "[BlueROV2][auto_contol] ROV odom not initialized")
             return
         
-        if self.dock_odom is None:
-            rospy.logerr_throttle(10, "[BlueROV2][auto_contol] Dock odom not initialized")
-            return
+        # if self.dock_odom is None:
+        #     rospy.logerr_throttle(10, "[BlueROV2][auto_contol] Dock odom not initialized")
+        #     return
         
         try:
             # x0 = np.array([[0., 0., 5., 0., 0., 0., 0., 0., 0., 0., 0., 0.]]).T
-            xr = np.array([[-1.16, -0.21, -0.59, 0., 0., 0., 0., 0., 0., 0., 0., 0.]]).T
+            # xr = np.array([[1., 0., 5., 0., 0., 0., 0., 0., 0., 0., 0., 0.]]).T
+            # x0 = np.array([[-0.21, 0.0, -0.5, 0., 0., 1.57, 0., 0., 0., 0., 0., 0.]]).T
+            # xr = np.array([[-0.21, 1.12, -0.5, 0., 0., 1.57, 0., 0., 0., 0., 0., 0.]]).T
+            xr = np.array([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]]).T
+
             # thrust, converge_flag = self.mpc.run_mpc(x0, xr)
-            thrust, converge_flag = self.mpc.run_mpc(self.rov_odom, xr)
+            thrust, converge_flag = self.mpc.run_mpc(self.rel_rov_pose, xr)
+            # thrust, converge_flag = self.mpc.run_mpc(self.rov_odom, xr)
+            
+            # Dear Rakesh: 
+            # We added this publishing behavior right here.
+            # Sincerely,
+            # RDML
+            
+            
             # thrust, converge_flag = self.mpc.run_mpc(self.rov_odom, self.dock_odom)
         except Exception as e:
-            rospy.logerr_throttle(10, "[BlueROV2][auto_control] Error in MPC Computation")
+            rospy.logerr_throttle(10, "[BlueROV2][auto_control] Error in MPC Computation" + str(e))
             return
         
         if converge_flag:
             rospy.loginfo_throttle(10, "[BlueROV2][auto_control] ROV reached dock successfully! Disarming now...")
             self.disarm()
         else:
+            thrust[0:6, :] *= 0.1
+            # thrust[5:, 0] *= 0.1
+            
+            mpc_op = Float32MultiArray()
+            dim = MultiArrayDimension()
+            dim.label = "MPC Thrusts"
+            dim.size = 6
+            dim.stride = 1
+            mpc_op.layout.dim.append(dim)
+            mpc_op.data = [float(thrust[i][0]) for i in range(6)]
+            # mpc_op.data.append(thrust[0][0])
+            # mpc_op.data.append(thrust[1][0])
+            # mpc_op.data.append(thrust[2][0])
+            # mpc_op.data.append(thrust[3][0])
+            # mpc_op.data.append(thrust[4][0])
+            # mpc_op.data.append(thrust[5][0])
+            self.mpc_output.publish(mpc_op)
+            
             pwm = self.thrust_to_pwm(thrust)
+            print(pwm[0:6])
+
             for _ in range(len(pwm), 18):
                 pwm.append(self.neutral_pwm)
             
             for i in range(len(pwm)):
                 pwm[i] = max(min(pwm[i], self.max_pwm_auto), self.min_pwm_auto)
                 
-            print(pwm)
+            print(pwm[0:6])
             print("")
 
             self.control_pub.publish(pwm)
+            
+            xr_msg = Float32MultiArray()
+            dim1 = MultiArrayDimension()
+            dim1.label = "X Ref"
+            dim1.size = 12
+            dim1.stride = 1
+            xr_msg.layout.dim.append(dim1)
+            # xr_msg.data = []
+            xr_msg.data = [float(xr[i][0]) for i in range(12)]
+            self.mpc_xr_pub.publish(xr_msg)
+
+            rov_odom_msg = Float32MultiArray()
+            dim2 = MultiArrayDimension()
+            dim2.label = "ROV Odom"
+            dim2.size = 12
+            dim2.stride = 1
+            rov_odom_msg.layout.dim.append(dim2)
+            # rov_odom_msg.data = []
+            # rov_odom_msg.data = self.rov_odom.flatten().tolist()
+            rov_odom_msg.data = [float(self.rel_rov_pose[i][0]) for i in range(12)]
+            self.mpc_rov_odom_pub.publish(rov_odom_msg)
+
             # self.override = pwm
         
         # time.sleep(5)
         
-        # self.override = [self.neutral_pwm, self.neutral_pwm, self.neutral_pwm, self.neutral_pwm, 1900, self.neutral_pwm]
+        # self.override = [self.neutral_pwm, self.neutral_pwm, self.neutral_pwm, self.neutral_pwm, self.neutral_pwm, self.neutral_pwm]
         # for _ in range(len(self.override), 18):
         #     self.override.append(self.neutral_pwm)
     
@@ -398,6 +531,8 @@ class BlueROV2():
         """
         axes = joy.axes
         buttons = joy.buttons
+        
+        self.mpc.mpc.reset()
         
         # Create a copy of axes as a list instead of a tuple so you can modify the values
         # The RCOverrideOut mesage type also expects a list
@@ -491,13 +626,13 @@ class BlueROV2():
         
         while not rospy.is_shutdown():
             # Try to get video data
-            try:
-                # Set up video output
-                frame = self.cam.frame()
-                frame = cv2.resize(frame, (1280, 720))
-                # frame = imutils.resize(frame, width=1200)
-            except Exception as error:
-                rospy.logerr_throttle(10, '[BlueROV2][run] frame error:' + str(error))
+            # try:
+            #     # Set up video output
+            #     frame = self.cam.frame()
+            #     frame = cv2.resize(frame, (1280, 720))
+            #     # frame = imutils.resize(frame, width=1200)
+            # except Exception as error:
+            #     rospy.logerr_throttle(10, '[BlueROV2][run] frame error:' + str(error))
 
             # if frame is not None:
             #     self.show_HUD(frame)
@@ -517,13 +652,13 @@ class BlueROV2():
             #     self.save(path, fname, frame)
 
             # # Try to display video feed to screen
-            try:
-                cv2.imshow('frame', frame)
-                cv2.waitKey(1)
-            except Exception as error:
-                rospy.logerr_throttle(10, '[BlueROV2][run] imshow error:' + str(error))
+            # try:
+            #     cv2.imshow('frame', frame)
+            #     cv2.waitKey(1)
+            # except Exception as error:
+            #     rospy.logerr_throttle(10, '[BlueROV2][run] imshow error:' + str(error))
 
-            self.image_idx += 1
+            # self.image_idx += 1
             rate.sleep()
 
 

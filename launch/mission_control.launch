@@ -32,14 +32,17 @@
     <param name="dev" type="string" value="$(arg joy_dev)" />
   </node>
 
-  <node pkg="rosservice" type="rosservice" name="mavros_set_stream" args="call --wait /mavros/set_stream_rate 0 10 1"/>
+  <node pkg="rosservice" type="rosservice" name="mavros_set_stream" args="call --wait /mavros/set_stream_rate 0 10 1" launch-prefix="taskset -c 1"/>
 
-  <node pkg="bluerov2_dock" type="mission_control.py" name="mission_control" output="$(arg log_output)" launch-prefix="taskset -c 1">
-    <param name="video_udp_port" value="$(arg video_udp_port)"/>
-    <param name="log_images" value="$(arg log_images)"/>
+  <node pkg="bluerov2_dock" type="mission_control.py" name="mission_control" output="$(arg log_output)" launch-prefix="taskset -c 2">
   </node>
   
-  <node pkg="bluerov2_dock" type="publish_node.py" name="pwm_publish" output="$(arg log_output)" launch-prefix="taskset -c 2">
+  <node pkg="bluerov2_dock" type="pwm_publish_node.py" name="pwm_publish" output="$(arg log_output)" launch-prefix="taskset -c 3">
+  </node>
+
+  <node pkg="bluerov2_dock" type="aruco_marker_detection.py" name="marker_detection" output="$(arg log_output)" launch-prefix="taskset -c 4">
+    <param name="video_udp_port" value="$(arg video_udp_port)"/>
+    <param name="log_images" value="$(arg log_images)"/>
   </node>
 
 </launch>

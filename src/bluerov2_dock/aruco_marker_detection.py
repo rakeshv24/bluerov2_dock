@@ -12,6 +12,7 @@ import sys
 
 sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/bluerov2_dock')
 
+import video
 from bluerov2_dock.msg import marker_pose, marker_detect
 from bluerov2_dock.srv import detection
 
@@ -43,27 +44,28 @@ ARUCO_DICT = {
 
 class Aruco():
     def __init__(self):
+        self.setup_video()
         self.service_flag = False
         self.bridge = CvBridge()
         self.first_marker = True
         self.max_size = -10000
         self.marker_thresh = 25
         
-        self.desired_markers = [0, 1, 2, 3, 4, 5]
+        self.desired_markers = [0, 1, 5]
         self.marker_size = {0: 0.30,
                             1: 0.20,
                             2: 0.10,
                             3: 0.05,
                             4: 0.15,
                             5: 0.25}
-        self.marker_offset = {0: [],
-                              1: [],
-                              2: [0.0675, -0.08],
-                              3: [-0.04875, 0.055],
-                              4: [0.075, 0.0575],
-                              5: [-0.065, -0.0575]}
-        self.camera_offset = [-0.16, 0.06]
-        self.dock_center_offset = 0.32
+        self.marker_offset = {0: [0.21, 0.006],
+                              1: [-0.178, 0.012],
+                              2: [0.09, -0.12],
+                              3: [-0.123, 0.17],
+                              4: [0.19, 0.146],
+                              5: [-0.15, -0.02]}
+        self.camera_offset = [0.16, -0.06]
+        self.dock_center_offset = -0.32
         
         self.prev_marker = 10000
         self.counter = 0
@@ -77,6 +79,7 @@ class Aruco():
         rospy.Timer(rospy.Duration(0.1), self.marker_detection)
         
     def load_camera_config(self):
+        # filename = '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/config/in_air/calibrationdata/ost.yaml'
         filename = '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/config/in_water/calibrationdata/ost.yaml'
         f = open(filename, "r")
         camera_params = yaml.load(f.read(), Loader=yaml.SafeLoader)
@@ -87,8 +90,21 @@ class Aruco():
     def initialize_subscribers_publishers(self):
         self.image_sub = rospy.Subscriber("/BlueROV2/video",
                                           Image, self.callback_image, queue_size=1)
-        self.pub = rospy.Publisher('/bluerov2_dock/marker_locations', marker_detect, queue_size=1)
+        self.pub = rospy.Publisher('/bluerov2_dock/rel_dock_center', marker_detect, queue_size=1)
         self.image_pub = rospy.Publisher('/bluerov2_dock/marker_detection', Image, queue_size=1)
+        
+    def setup_video(self):
+        # Set up video feed
+        self.cam = None
+        self.log_images = False
+        try:
+            video_udp_port = rospy.get_param("/marker_detection/video_udp_port")
+            self.log_images = rospy.get_param("/marker_detection/log_images")
+            rospy.loginfo("video_udp_port: {}".format(video_udp_port))
+            self.cam = video.Video(video_udp_port)
+        except Exception as e:
+            rospy.logerr("[Aruco][setup_video] Failed to setup video through custom UDP port. Initializing through default port...")
+            self.cam = video.Video()
 
     def callback_image(self, data):
         try:
@@ -195,6 +211,19 @@ class Aruco():
                         if check_max:
                             self.max_size = self.marker_size[j[0]]
                             max_marker_index = i
+                            
+                        # rvec, tvec, _ = cv2.aruco.estimatePoseSingleMarkers(corners[i], 
+                        #                                                     self.marker_size[j[0]], 
+                        #                                                     camera_mtx, dist_mtx)
+
+                        # # cv2.aruco.drawDetectedMarkers(frame, corners[i])
+                        # cv2.aruco.drawAxis(frame, camera_mtx, dist_mtx, rvec, tvec, 2)
+                        
+                        # tvec[0][0][0] = tvec[0][0][0] + self.marker_offset[j[0]][0]
+                        # tvec[0][0][1] = tvec[0][0][1] + self.marker_offset[j[0]][1] + self.camera_offset[1] 
+                        # tvec[0][0][2] = tvec[0][0][2] + self.dock_center_offset + self.camera_offset[0]
+                        
+                        # cv2.aruco.drawAxis(frame, camera_mtx, dist_mtx, rvec, tvec, 2)
 
                     # If there are more than one of the desired markers, pick the smallest marker; 
                     # Else, pick the largest detectable marker one or report that none of 
@@ -203,77 +232,84 @@ class Aruco():
                         min_index = des_detected_markers.index(min(des_detected_markers))
                         target_index = detected_marker_ids[min_index]
                     else:
-                        if max_marker_index == -1:
-                            target_index = -1
-                        else:
-                            target_index = max_marker_index
+                        # if max_marker_index == -1:
+                        #     target_index = -1
+                        # else:
+                        target_index = max_marker_index
 
-                    if target_index == -1:
-                        pub_obj.locations = []
-                        pub_obj.detection_flag = False
-                        pub_obj.header = Header()
-                        pub_obj.header.stamp = rospy.Time.now()
-                        self.pub.publish(pub_obj)
-                        return None
-                    else:
-                        # If it is the very first marker detection, then store that as the previous marker info as well
-                        if self.first_marker:
-                            self.prev_marker = ids[target_index][0]
-                            self.counter = 0
-                            pub_obj.controller_param = True
-                            self.first_marker = False
+                    # if target_index == -1:
+                    #     pub_obj.locations = []
+                    #     pub_obj.detection_flag = False
+                    #     pub_obj.header = Header()
+                    #     pub_obj.header.stamp = rospy.Time.now()
+                    #     self.pub.publish(pub_obj)
+                    #     return None
+                    # else:
+                    #     # If it is the very first marker detection, then store that as the previous marker info as well
+                    #     if self.first_marker:
+                    #         self.prev_marker = ids[target_index][0]
+                    #         self.counter = 0
+                    #         pub_obj.controller_param = True
+                    #         self.first_marker = False
 
-                        else:
-                            # If the previous marker and the current marker are the same, 
-                            # then assert the controller flag
-                            if self.prev_marker == ids[target_index][0]:
-                                pub_obj.controller_param = True
-                                target_index = self.prev_marker_index
-                                self.counter = 0
-                            # Else, perform marker switching
-                            else:
-                                # Check if the smaller marker remains the same for 5 frames before switching
-                                if self.counter > 5.0:
-                                    # self.counter1 = 1
-                                    self.prev_marker = ids[target_index][0]
-                                    self.counter = 0
-                                else:
-                                    # Check if it remains the same
-                                    if self.prev_marker_check:
-                                        #pub_obj.marker_switch = True
-                                        pub_obj.controller_param = True
-                                        target_index = self.prev_marker_index
-                                        self.counter += 1
-                                    # If not, return none
-                                    else:
-                                        pub_obj.locations = []
-                                        pub_obj.detection_flag = False
-                                        pub_obj.header = Header()
-                                        pub_obj.header.stamp = rospy.Time.now()
-                                        self.pub.publish(pub_obj)
-                                        return None
+                    #     else:
+                    #         # If the previous marker and the current marker are the same, 
+                    #         # then assert the controller flag
+                    #         if self.prev_marker == ids[target_index][0]:
+                    #             pub_obj.controller_param = True
+                    #             target_index = self.prev_marker_index
+                    #             self.counter = 0
+                    #         # Else, perform marker switching
+                    #         else:
+                    #             # Check if the smaller marker remains the same for 5 frames before switching
+                    #             if self.counter > 5.0:
+                    #                 # self.counter1 = 1
+                    #                 self.prev_marker = ids[target_index][0]
+                    #                 self.counter = 0
+                    #             else:
+                    #                 # Check if it remains the same
+                    #                 if self.prev_marker_check:
+                    #                     #pub_obj.marker_switch = True
+                    #                     pub_obj.controller_param = True
+                    #                     target_index = self.prev_marker_index
+                    #                     self.counter += 1
+                    #                 # If not, return none
+                    #                 else:
+                    #                     pub_obj.locations = []
+                    #                     pub_obj.detection_flag = False
+                    #                     pub_obj.header = Header()
+                    #                     pub_obj.header.stamp = rospy.Time.now()
+                    #                     self.pub.publish(pub_obj)
+                    #                     return None
                                             
                     # Marker Pose Estimation
                     rvec, tvec, _ = cv2.aruco.estimatePoseSingleMarkers(
                         corners[target_index], self.marker_size[ids[target_index][0]], camera_mtx, dist_mtx)
 
-                    # cv2.aruco.drawDetectedMarkers(frame, corners[index])
-                    cv2.aruco.drawAxis(frame, camera_mtx, dist_mtx, rvec, tvec, 2)
+                    # cv2.aruco.drawDetectedMarkers(frame, corners[target_index])
 
                     # Calculates rodrigues matrix
                     rmat = cv2.Rodrigues(rvec)[0]
                     # Convert rmat to euler
                     rvec = self.rotation_matrix_to_euler(rmat)
                     
+                    tvec[0][0][0] = tvec[0][0][0] + self.marker_offset[ids[target_index][0]][0]
+                    tvec[0][0][1] = tvec[0][0][1] + self.marker_offset[ids[target_index][0]][1] + self.camera_offset[1] 
+                    tvec[0][0][2] = tvec[0][0][2] + self.dock_center_offset + self.camera_offset[0]  
+                    
                     # Relative Position
                     # TODO: Fix the orientation of the translation and rotational vecs
                     body_frame = np.zeros(shape=(1, 3))
-                    # body_frame[0][0] = tvec[0][0][0] - self.marker_offset[ids[target_index][0]][0] - self.camera_offset[0]
-                    # body_frame[0][1] = tvec[0][0][1] - self.marker_offset[ids[target_index][0]][1] - self.camera_offset[1]
-                    # body_frame[0][2] = tvec[0][0][2] - self.marker_offset[ids[target_index][0]][2] - self.camera_offset[2] 
-                    body_frame[0][0] = tvec[0][0][0]
-                    body_frame[0][1] = tvec[0][0][1]
-                    body_frame[0][2] = tvec[0][0][2]
+                    # body_frame[0][0] = tvec[0][0][2] + self.dock_center_offset + self.camera_offset[0]
+                    # body_frame[0][1] = tvec[0][0][0] + self.marker_offset[ids[target_index][0]][0]
+                    # body_frame[0][2] = tvec[0][0][1] + self.marker_offset[ids[target_index][0]][1] + self.camera_offset[1] 
+                    body_frame[0][0] = tvec[0][0][2]
+                    body_frame[0][1] = tvec[0][0][0]
+                    body_frame[0][2] = tvec[0][0][1]
+                    
+                    cv2.aruco.drawAxis(frame, camera_mtx, dist_mtx, rvec, tvec, 0.5)
+                    
+                    # print(body_frame)
                     
                     # if self.counter1 > 0 and self.counter1 < 20:
                     #     pub_obj.marker_switch = True
@@ -284,36 +320,37 @@ class Aruco():
                     p.x = body_frame[0][0]
                     p.y = body_frame[0][1]
                     p.z = body_frame[0][2]
-                    p.roll = rvec[0]
-                    p.pitch = rvec[1]
-                    p.yaw = rvec[2]
+                    p.roll = 0.0
+                    p.pitch = 0.0
+                    p.yaw = np.arctan2(body_frame[0][1], body_frame[0][0])
                     pub_obj.locations.append(p)
                     pub_obj.detection_flag = True
                     pub_obj.header = Header()
                     pub_obj.header.stamp = rospy.Time.now()
                     self.pub.publish(pub_obj)
 
-                else:
-                    pub_obj.locations = []
-                    pub_obj.detection_flag = False
-                    pub_obj.header = Header()
-                    pub_obj.header.stamp = rospy.Time.now()
-                    self.pub.publish(pub_obj)
+                # else:
+                #     pub_obj.locations = []
+                #     pub_obj.detection_flag = False
+                #     pub_obj.header = Header()
+                #     pub_obj.header.stamp = rospy.Time.now()
+                #     self.pub.publish(pub_obj)
 
-                cv2.imshow("marker", frame)
-                # self.result.write(frame)
-                # publish_image = Image()
-                # publish_image.data = frame
-                ros_image = self.cvbridge.cv2_to_imgmsg(frame, 'bgr8')
-                self.image_pub.publish(ros_image)
-                cv2.waitKey(1)
-
-            else:
-                pub_obj.locations = []
-                pub_obj.detection_flag = False
-                pub_obj.header = Header()
-                pub_obj.header.stamp = rospy.Time.now()
-                self.pub.publish(pub_obj)
+            # else:
+            #     pub_obj.locations = []
+            #     pub_obj.detection_flag = False
+            #     pub_obj.header = Header()
+            #     pub_obj.header.stamp = rospy.Time.now()
+            #     self.pub.publish(pub_obj)
+            
+            
+            cv2.imshow("marker", frame)
+            # self.result.write(frame)
+            # publish_image = Image()
+            # publish_image.data = frame
+            # ros_image = self.bridge.cv2_to_imgmsg(frame, 'bgr8')
+            # self.image_pub.publish(ros_image)
+            cv2.waitKey(1)
 
     def detect_callback(self, req):
 
@@ -322,14 +359,14 @@ class Aruco():
             rospy.loginfo("Detection is up and running!")
             return True, "Detection Started"
         else:
-            self.result.release()
+            # self.result.release()
             self.service_flag = False
             rospy.loginfo("All operations are suspended!")
             return True, "Detection Stopped"
 
 
 if __name__ == '__main__':
-    rospy.init_node('detection', anonymous=True)
+    rospy.init_node('marker_detection', anonymous=True)
     obj = Aruco()
     d = rospy.Service('bluerov2_dock/control_detection', detection, obj.detect_callback)
 
