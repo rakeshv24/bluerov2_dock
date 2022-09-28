@@ -182,7 +182,6 @@ class BlueROV2():
                 self.rov_pose_sub_time = data.header.stamp.to_sec()
                 self.previous_rov_pose = self.rov_pose
                 self.first_odom_flag = False
-                # print("I'm here")
             else:
                 del_time = data.header.stamp.to_sec() - self.rov_pose_sub_time
                 rov_pose_diff = self.rov_pose - self.previous_rov_pose
@@ -194,7 +193,6 @@ class BlueROV2():
                 self.previous_rov_pose = self.rov_pose
                 
                 self.rov_odom = np.vstack((self.rov_pose, self.rov_twist))
-                # print(self.rov_odom)
             
             # self.rov_twist = np.zeros((6,1))
             # self.rov_twist[0][0] = data.twist.twist.linear.x
@@ -266,10 +264,6 @@ class BlueROV2():
     def thrust_to_pwm(self, thrust):
         values = []
         thrust = thrust.flatten()
-        # thrust[0] = thrust[1]
-        # thrust[1] = -thrust[0]
-        # thrust[2] = -thrust[2]
-        # thrust[5] = -thrust[5]
             
         try:        
             for i in range(6):
@@ -434,13 +428,6 @@ class BlueROV2():
             # thrust, converge_flag = self.mpc.run_mpc(x0, xr)
             thrust, converge_flag = self.mpc.run_mpc(self.rel_rov_pose, xr)
             # thrust, converge_flag = self.mpc.run_mpc(self.rov_odom, xr)
-            
-            # Dear Rakesh: 
-            # We added this publishing behavior right here.
-            # Sincerely,
-            # RDML
-            
-            
             # thrust, converge_flag = self.mpc.run_mpc(self.rov_odom, self.dock_odom)
         except Exception as e:
             rospy.logerr_throttle(10, "[BlueROV2][auto_control] Error in MPC Computation" + str(e))
@@ -460,25 +447,15 @@ class BlueROV2():
             dim.stride = 1
             mpc_op.layout.dim.append(dim)
             mpc_op.data = [float(thrust[i][0]) for i in range(6)]
-            # mpc_op.data.append(thrust[0][0])
-            # mpc_op.data.append(thrust[1][0])
-            # mpc_op.data.append(thrust[2][0])
-            # mpc_op.data.append(thrust[3][0])
-            # mpc_op.data.append(thrust[4][0])
-            # mpc_op.data.append(thrust[5][0])
             self.mpc_output.publish(mpc_op)
             
             pwm = self.thrust_to_pwm(thrust)
-            print(pwm[0:6])
 
             for _ in range(len(pwm), 18):
                 pwm.append(self.neutral_pwm)
             
             for i in range(len(pwm)):
                 pwm[i] = max(min(pwm[i], self.max_pwm_auto), self.min_pwm_auto)
-                
-            print(pwm[0:6])
-            print("")
 
             self.control_pub.publish(pwm)
             
@@ -488,7 +465,6 @@ class BlueROV2():
             dim1.size = 12
             dim1.stride = 1
             xr_msg.layout.dim.append(dim1)
-            # xr_msg.data = []
             xr_msg.data = [float(xr[i][0]) for i in range(12)]
             self.mpc_xr_pub.publish(xr_msg)
 
@@ -498,19 +474,8 @@ class BlueROV2():
             dim2.size = 12
             dim2.stride = 1
             rov_odom_msg.layout.dim.append(dim2)
-            # rov_odom_msg.data = []
-            # rov_odom_msg.data = self.rov_odom.flatten().tolist()
             rov_odom_msg.data = [float(self.rel_rov_pose[i][0]) for i in range(12)]
             self.mpc_rov_odom_pub.publish(rov_odom_msg)
-
-            # self.override = pwm
-        
-        # time.sleep(5)
-        
-        # self.override = [self.neutral_pwm, self.neutral_pwm, self.neutral_pwm, self.neutral_pwm, self.neutral_pwm, self.neutral_pwm]
-        # for _ in range(len(self.override), 18):
-        #     self.override.append(self.neutral_pwm)
-    
         
     def manual_control(self, joy):
         """
@@ -542,12 +507,7 @@ class BlueROV2():
 
         # Remap joystick commands [-1.0 to 1.0] to RC_override commands [1100 to 1900]
         adjusted_joy = [int(val*300 + self.neutral_pwm) for val in temp_axes]
-        # adjusted_joy = [int(val*300 + self.neutral_pwm) for val in axes]
         override = [self.neutral_pwm for _ in range(18)]
-        
-        # override = [int(val*300 + self.neutral_pwm) for val in axes]
-        # for _ in range(len(override), 8):
-        #     override.append(0)
 
         # Remap joystick channels to correct ROV channel 
         joy_mapping = [(0,5), (1,4), (3,3), (4,2), (7,7)]
@@ -561,9 +521,7 @@ class BlueROV2():
 
         rospy.loginfo("[BlueROV2][manual_control] Joy PWM Values: {}".format(override[0:9]))
         # Send joystick data as rc output into rc override topic
-        # print(override[0:9])
         self.control_pub.publish(override)
-        # self.override = override
         
     def timer_cb(self, timer_event):
         if self.override is not None:
@@ -645,13 +603,6 @@ class BlueROV2():
             except Exception as error:
                 rospy.logerr_throttle(10, '[BlueROV2][run] Controller error:' + str(error))
 
-            # if self.log_images and self.image_idx % 10 == 0:
-            #     fname = "img_%04d.png" %self.image_idx
-            #     rospack = rospkg.RosPack()
-            #     path = rospack.get_path("bluerov2_dock") + "/output/"
-            #     self.save(path, fname, frame)
-
-            # # Try to display video feed to screen
             # try:
             #     cv2.imshow('frame', frame)
             #     cv2.waitKey(1)
