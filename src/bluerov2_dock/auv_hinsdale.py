@@ -190,17 +190,9 @@ class AUV(object):
                            mtimes(self.mass_inv, (total_force - mtimes(self.rb_mass, nu_c_dot) - mtimes(coriolis_force_rb, nu) - mtimes(coriolis_force_added, nu_r) - mtimes(damping_force, nu_r) - restorive_force)),
                            mtimes(self.mass_inv, (total_force - mtimes(coriolis_force_RB_A, nu_r) - mtimes(damping_force, nu_r) - restorive_force))
                            )
-        
-        # nu_dot = mtimes(self.mass_inv, (thruster_force + mtimes(self.added_mass, nu_c_dot) - mtimes(coriolis_force_rb, nu) - mtimes(coriolis_force_added, nu_r) - mtimes(damping_force, nu_r) - restorive_force))
-        # nu_dot = nu_c_dot + nu_r_dot
-        
-        # next_eta = eta + eta_dot * dt
-        # next_nu = nu + nu_dot * dt
 
         x_dot = vertcat(eta_dot, nu_r_dot)
         # chi_dot = vertcat(eta_dot, nu_r_dot, nu_c_dot)
-        # x_dot = vertcat(eta_dot, nu_dot)
-        # x_k_1 = vertcat(next_eta, next_nu)
                     
         return x_dot
     

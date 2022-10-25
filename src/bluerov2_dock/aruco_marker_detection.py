@@ -212,19 +212,6 @@ class Aruco():
                             self.max_size = self.marker_size[j[0]]
                             max_marker_index = i
                             
-                        # rvec, tvec, _ = cv2.aruco.estimatePoseSingleMarkers(corners[i], 
-                        #                                                     self.marker_size[j[0]], 
-                        #                                                     camera_mtx, dist_mtx)
-
-                        # # cv2.aruco.drawDetectedMarkers(frame, corners[i])
-                        # cv2.aruco.drawAxis(frame, camera_mtx, dist_mtx, rvec, tvec, 2)
-                        
-                        # tvec[0][0][0] = tvec[0][0][0] + self.marker_offset[j[0]][0]
-                        # tvec[0][0][1] = tvec[0][0][1] + self.marker_offset[j[0]][1] + self.camera_offset[1] 
-                        # tvec[0][0][2] = tvec[0][0][2] + self.dock_center_offset + self.camera_offset[0]
-                        
-                        # cv2.aruco.drawAxis(frame, camera_mtx, dist_mtx, rvec, tvec, 2)
-
                     # If there are more than one of the desired markers, pick the smallest marker; 
                     # Else, pick the largest detectable marker one or report that none of 
                     # the desired markers were detected.
@@ -236,52 +223,7 @@ class Aruco():
                         #     target_index = -1
                         # else:
                         target_index = max_marker_index
-
-                    # if target_index == -1:
-                    #     pub_obj.locations = []
-                    #     pub_obj.detection_flag = False
-                    #     pub_obj.header = Header()
-                    #     pub_obj.header.stamp = rospy.Time.now()
-                    #     self.pub.publish(pub_obj)
-                    #     return None
-                    # else:
-                    #     # If it is the very first marker detection, then store that as the previous marker info as well
-                    #     if self.first_marker:
-                    #         self.prev_marker = ids[target_index][0]
-                    #         self.counter = 0
-                    #         pub_obj.controller_param = True
-                    #         self.first_marker = False
-
-                    #     else:
-                    #         # If the previous marker and the current marker are the same, 
-                    #         # then assert the controller flag
-                    #         if self.prev_marker == ids[target_index][0]:
-                    #             pub_obj.controller_param = True
-                    #             target_index = self.prev_marker_index
-                    #             self.counter = 0
-                    #         # Else, perform marker switching
-                    #         else:
-                    #             # Check if the smaller marker remains the same for 5 frames before switching
-                    #             if self.counter > 5.0:
-                    #                 # self.counter1 = 1
-                    #                 self.prev_marker = ids[target_index][0]
-                    #                 self.counter = 0
-                    #             else:
-                    #                 # Check if it remains the same
-                    #                 if self.prev_marker_check:
-                    #                     #pub_obj.marker_switch = True
-                    #                     pub_obj.controller_param = True
-                    #                     target_index = self.prev_marker_index
-                    #                     self.counter += 1
-                    #                 # If not, return none
-                    #                 else:
-                    #                     pub_obj.locations = []
-                    #                     pub_obj.detection_flag = False
-                    #                     pub_obj.header = Header()
-                    #                     pub_obj.header.stamp = rospy.Time.now()
-                    #                     self.pub.publish(pub_obj)
-                    #                     return None
-                                            
+                        
                     # Marker Pose Estimation
                     rvec, tvec, _ = cv2.aruco.estimatePoseSingleMarkers(
                         corners[target_index], self.marker_size[ids[target_index][0]], camera_mtx, dist_mtx)
@@ -308,12 +250,6 @@ class Aruco():
                     body_frame[0][2] = tvec[0][0][1]
                     
                     cv2.aruco.drawAxis(frame, camera_mtx, dist_mtx, rvec, tvec, 0.5)
-                    
-                    # print(body_frame)
-                    
-                    # if self.counter1 > 0 and self.counter1 < 20:
-                    #     pub_obj.marker_switch = True
-                    #     self.counter1 += 1
 
                     pub_obj.locations = []
                     p = marker_pose()
@@ -328,22 +264,7 @@ class Aruco():
                     pub_obj.header = Header()
                     pub_obj.header.stamp = rospy.Time.now()
                     self.pub.publish(pub_obj)
-
-                # else:
-                #     pub_obj.locations = []
-                #     pub_obj.detection_flag = False
-                #     pub_obj.header = Header()
-                #     pub_obj.header.stamp = rospy.Time.now()
-                #     self.pub.publish(pub_obj)
-
-            # else:
-            #     pub_obj.locations = []
-            #     pub_obj.detection_flag = False
-            #     pub_obj.header = Header()
-            #     pub_obj.header.stamp = rospy.Time.now()
-            #     self.pub.publish(pub_obj)
-            
-            
+                    
             cv2.imshow("marker", frame)
             # self.result.write(frame)
             # publish_image = Image()

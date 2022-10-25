@@ -49,6 +49,8 @@ class BlueROV2():
         
         self.override = None
         
+        self.mocap_flag = False
+        
         self.rov_odom = None
         self.dock_odom = None
         
@@ -403,32 +405,28 @@ class BlueROV2():
         if sum(control_sticks) > 0:
             # Set mode to manual
             self.mode_flag = 'manual'
-            # Immediately exit the function
             return
         
-        # if self.rov_odom is None:
-        #     rospy.logerr_throttle(10, "[BlueROV2][auto_contol] ROV odom not initialized")
-        #     return
-        
-        if self.rel_rov_pose is None:
-            rospy.logerr_throttle(10, "[BlueROV2][auto_contol] ROV odom not initialized")
-            return
-        
-        # if self.dock_odom is None:
-        #     rospy.logerr_throttle(10, "[BlueROV2][auto_contol] Dock odom not initialized")
-        #     return
+        if self.mocap_flag:
+            if self.rov_odom is None:
+                rospy.logerr_throttle(10, "[BlueROV2][auto_contol] ROV odom not initialized")
+                return
+            if self.dock_odom is None:
+                rospy.logerr_throttle(10, "[BlueROV2][auto_contol] Dock odom not initialized")
+                return
+            x0 = self.rov_odom
+            xr = np.array([[-0.21, 1.12, -0.5, 0., 0., 1.57, 0., 0., 0., 0., 0., 0.]]).T
+            # xr = self.dock_odom
+        else:
+            if self.rel_rov_pose is None:
+                rospy.logerr_throttle(10, "[BlueROV2][auto_contol] ROV odom not initialized")
+                return
+            x0 = self.rel_rov_pose
+            xr = np.array([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]]).T
         
         try:
-            # x0 = np.array([[0., 0., 5., 0., 0., 0., 0., 0., 0., 0., 0., 0.]]).T
-            # xr = np.array([[1., 0., 5., 0., 0., 0., 0., 0., 0., 0., 0., 0.]]).T
-            # x0 = np.array([[-0.21, 0.0, -0.5, 0., 0., 1.57, 0., 0., 0., 0., 0., 0.]]).T
-            # xr = np.array([[-0.21, 1.12, -0.5, 0., 0., 1.57, 0., 0., 0., 0., 0., 0.]]).T
             xr = np.array([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]]).T
-
-            # thrust, converge_flag = self.mpc.run_mpc(x0, xr)
-            thrust, converge_flag = self.mpc.run_mpc(self.rel_rov_pose, xr)
-            # thrust, converge_flag = self.mpc.run_mpc(self.rov_odom, xr)
-            # thrust, converge_flag = self.mpc.run_mpc(self.rov_odom, self.dock_odom)
+            thrust, converge_flag = self.mpc.run_mpc(x0, xr)
         except Exception as e:
             rospy.logerr_throttle(10, "[BlueROV2][auto_control] Error in MPC Computation" + str(e))
             return
@@ -437,6 +435,7 @@ class BlueROV2():
             rospy.loginfo_throttle(10, "[BlueROV2][auto_control] ROV reached dock successfully! Disarming now...")
             self.disarm()
         else:
+            # Scaling down the thrust forces
             thrust[0:6, :] *= 0.1
             # thrust[5:, 0] *= 0.1
             
@@ -527,56 +526,6 @@ class BlueROV2():
         if self.override is not None:
             self.control_pub.publish(self.override)
     
-    def show_HUD(self, frame):
-        """
-        takes an image as input and overlays information on top of the image
-
-        The following information is added:
-            - Battery Voltage (will turn red if below 15.4 volts)
-            - Armed Status (Status will show up as red when armed)
-            - Mode (Manual/Auto)
-            - Small green circle in the center of the screen
-
-        Both modifies and returns input image
-        """
-        # Try to get voltage and armed status
-        try:
-            battery_voltage = self.sub_data_dict['battery'].voltage
-            armed = self.sub_data_dict['state'].armed
-        except Exception as error:
-            rospy.logerr_throttle(10, '[BlueROV2][show_HUD] Get data error:' + str(error))
-
-        height, width = frame.shape[:2]
-        offset = width // 50
-
-        # Display voltage. If voltage < 15.4 volts, display in red text
-        voltage_text_color = (0, 255, 0)
-        if battery_voltage < 15.4:
-            voltage_text_color = (0, 0, 255)
-        battery_voltage = str(round(battery_voltage, 2)) + " V"
-        cv2.putText(frame, battery_voltage, (offset, height - offset),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, voltage_text_color, 2)
-
-        # Display armed/disarmed status
-        if not armed:
-            armed_text = "Disarmed"
-            armed_text_color = (0, 255, 0)
-        else:
-            armed_text = "Armed"
-            armed_text_color = (0, 0, 255)
-        cv2.putText(frame, armed_text, (offset, offset + 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.5, armed_text_color, 3)
-
-        # Display mode (manual/auto)
-        mode_flag_x = width - offset - len(self.mode_flag * 20)
-        cv2.putText(frame, self.mode_flag, (mode_flag_x, offset + 15),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-        # Display small green circle at center of screen
-        cv2.circle(frame, (width//2, height//2), 8, (0, 255, 0), 2)
-
-        return frame
-    
     def run(self):
         """Run user code: activates video stream, grabs joystick data, 
         enables control, allows for optional image logging"""
@@ -592,9 +541,6 @@ class BlueROV2():
             # except Exception as error:
             #     rospy.logerr_throttle(10, '[BlueROV2][run] frame error:' + str(error))
 
-            # if frame is not None:
-            #     self.show_HUD(frame)
-            
             # Try to get joystick axes and button data
             try:
                 joy = self.sub_data_dict['joy']

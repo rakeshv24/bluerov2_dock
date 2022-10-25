@@ -9,7 +9,6 @@ sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/blue
 from casadi import evalf
 from auv_hinsdale import AUV
 from mpc_hinsdale import MPC
-import pickle
 
 
 class MPControl():
@@ -35,22 +34,6 @@ class MPControl():
         self.t_f = 3600.0
         self.t_span = np.arange(0.0, self.t_f, self.dt)
         self.mpc.reset()
-                
-        self.wec_data = {"state": {}}
-        self.wec_data["state"]["eta"] = np.zeros((6, len(self.t_span) + 1))
-        self.wec_data["state"]["nu_r"] = np.zeros((6, len(self.t_span) + 1))
-        
-        self.nav_data = {"state":{},
-                         "control":{},
-                         "analysis":{}}
-        self.nav_data["state"]["t"] = self.t_span
-        self.nav_data["state"]["eta"] = np.zeros((6, len(self.t_span) + 1))
-        self.nav_data["state"]["nu_r"] = np.zeros((6, len(self.t_span) + 1))
-        self.nav_data["control"]["u"] = np.zeros((self.mpc.thrusters, len(self.t_span)))
-        self.nav_data["analysis"]["eta_dot"] = np.zeros((6, len(self.t_span)))
-        self.nav_data["analysis"]["nu_r_dot"] = np.zeros((6, len(self.t_span)))
-        self.nav_data["analysis"]["inst_cost"] = np.zeros((1, len(self.t_span)))
-        self.nav_data["analysis"]["thrust_force"] = np.zeros((6, len(self.t_span)))
         
         self.opt_data = {}
             
@@ -76,7 +59,6 @@ class MPControl():
         
         else:    
             u, inst_cost = self.mpc.run_mpc(x0, xr)
-            # print(u)
             
             # x_dot = self.auv.compute_nonlinear_dynamics(x0, u, complete_model=True)
             
@@ -88,17 +70,6 @@ class MPControl():
             # self.path_length += np.linalg.norm(x_sim[0:3, 0] - x0[0:3, 0])
             # self.distance = np.linalg.norm(x_sim[0:3, :] - xr[0:3, :])
             # self.yaw_diff = abs((((x_sim[5, :] - xr[5, :]) + np.pi) % (2*np.pi)) - np.pi)[0]
-            
-            # self.wec_data["state"]["eta"][:, self.time_id] = xr[0:6, :].flatten()
-            # self.wec_data["state"]["nu_r"][:, self.time_id] = xr[6:12, :].flatten()
-            
-            # self.nav_data["state"]["eta"][:, self.time_id+1] = x_sim[0:6, :].flatten()
-            # self.nav_data["state"]["nu_r"][:, self.time_id+1] = x_sim[6:12, :].flatten()
-            # self.nav_data["control"]["u"][:, self.time_id] = u.flatten()
-            # self.nav_data["analysis"]["eta_dot"][:, self.time_id] = x_dot[0:6, :].flatten()
-            # self.nav_data["analysis"]["nu_r_dot"][:, self.time_id] = x_dot[6:12, :].flatten()
-            # self.nav_data["analysis"]["inst_cost"][:, self.time_id] = inst_cost
-            # self.nav_data["analysis"]["thrust_force"][:, self.time_id] = thrust_force.flatten()
             
             self.comp_time = time.perf_counter() - process_t0
             
@@ -122,30 +93,9 @@ class MPControl():
             print("----------------------------------------------")
             # print("")
             
-            # self.opt_data["comp_time"] = self.comp_time
-            # self.opt_data["path_length"] = self.path_length
-            # self.opt_data["opt_index"] = self.time_id
-            # self.opt_data["horizon"] = self.mpc.horizon
-            # self.opt_data["dt"] = self.mpc.dt
-            # self.opt_data["full_body"] = self.mpc.model_type
-            
             # x_sim[11, :] = np.round(x_sim[11, :], 2)
             
             self.time_id += 1
                     
             # return u, x_sim, False
             return u, False
-            
-    def log_data(self, path):
-        with open(path + '/opt_data.pkl', 'wb') as f:
-            pickle.dump(self.opt_data, f)
-        
-        with open(path + '/sim_nav_data.pkl', 'wb') as f:
-            pickle.dump(self.nav_data, f)
-        
-        with open(path + '/env_data.pkl', 'wb') as f:
-            pickle.dump(self.env_data, f)
-        
-        with open(path + '/wec_data.pkl', 'wb') as f:
-            pickle.dump(self.wec_data, f)
-            
