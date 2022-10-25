@@ -73,6 +73,8 @@ This repository is a modified version of the [bluerov_ros_playground](https://gi
 1. `$ sudo /opt/ros/noetic/lib/mavros/install_geographiclib_datasets.sh`
 #### Installing imutils
 1. `$ pip install imutils`
+#### Installing imutils
+1. `$ pip install pandas`
 #### Installing OpenCV
 1. Make sure python-opencv is not installed
    - `$ pip uninstall opencv-python`
