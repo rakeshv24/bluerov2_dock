@@ -242,9 +242,6 @@ class BlueROV2():
             rospy.logerr_throttle(10, "[BlueROV2][dock_odom_cb] Not receiving dock's odometry")
         
     def store_sub_data(self, data, key):
-        """
-        Generic callback function that stores subscriber data in the self.sub_data_dict dictionary
-        """
         try:
             self.sub_data_dict[key] = data
         except Exception as e:
@@ -296,8 +293,6 @@ class BlueROV2():
         return pwm
     
     def arm(self):
-        """ Arm the vehicle and trigger the disarm
-        """
         rospy.wait_for_service('/mavros/cmd/arming')
         self.arm_srv(True)
         rospy.loginfo("[BlueROV2][arm] Arming vehicle")
@@ -311,47 +306,7 @@ class BlueROV2():
         rospy.wait_for_service('/mavros/cmd/arming')
         self.arm_srv(False)
 
-    def joy_button_press(self, joy_button):
-        """Sends button press through mavros/manual_control. Useful for sending
-            commands that don't have an explicit rostopic (i.e lights).
-        
-        Mavros_msgs/ManualControl.msg takes a std_msgs/Header header, 
-        float32 x, y, z, and r thruster positions, and uint16 buttons. 
-        Thrusters are controlled through rc_override, so are set to zero here.
-
-        Args:
-            joy_button (16 integer bitfield): mavlink mapped button, 
-                can be set easliy in QGC"""
-
-        # Set up header for mavros_msgs.ManualControl.msg
-        header = Header()
-        header.stamp = rospy.Time.now()
-        header.frame_id = "foo"
-
-        # Set thruster values to zero. X, Y, and R normalize from [-1000, 1000].
-        # Z has zero set at 500 for legacy reasons.
-        x_zero = 0  # forward-back axis
-        y_zero = 0  # left-right axis
-        z_zero = 500  # up-down axis
-        r_zero = 0  # yaw axis
-
-        self.lights_pub.publish(
-            header,
-            x_zero,
-            y_zero,
-            z_zero,
-            r_zero,
-            joy_button
-        )
-
     def controller(self, joy):
-        """
-        Arbiter to set the ROV in manual or autonomous mode. 
-        Sets buttons on the joystick.
-        
-        Args: 
-            joy: joystick subscription
-        """            
         axes = joy.axes
         buttons = joy.buttons
         
@@ -365,29 +320,6 @@ class BlueROV2():
             self.disarm()
         elif buttons[6] == 1:  # "start" joystick button
             self.arm()
-
-        # turn on lights (can add other button functionality here, 
-        # maps to feature set in QGC)
-        joy_10 = 0b0000010000000000     # lights_brighter
-        joy_9 =  0b0000001000000000     # lights_dimmer
-        joy_14 = 0b1000000000000000     # disabled -- MAKE SURE THIS BUTTON IS DISABLED IN QGC
-
-        # If right bumper is pressed
-        if buttons[5] == 1:
-            # turn lights down one step
-            self.joy_button_press(joy_9)
-            # set flag so blank button is sent when the lights button is released
-            # (this is necessary to get the lights to behave properly)
-            self.reset_button_press =  True
-        # If left bumper is pressed
-        elif buttons[4] == 1:
-            # turn light up one step
-            self.joy_button_press(joy_10)
-            self.reset_button_press =  True
-        # If reset flag is true send blank button
-        elif self.reset_button_press == True:
-            self.joy_button_press(joy_14)
-            self.reset_button_press = False
 
         # set autonomous or manual control (manual control default)
         if self.mode_flag == 'auto':
@@ -477,22 +409,6 @@ class BlueROV2():
             self.mpc_rov_odom_pub.publish(rov_odom_msg)
         
     def manual_control(self, joy):
-        """
-        Takes joystick input and sends appropriate pwm value to appropriate channels
-
-        Channels:
-            override list elements are pwm values for the channel (element index + 1)
-            (i.e. index 0 = channel 1)
-            
-            1: Pitch (not mapped, BlueROV2 doesn't support pitch anyway)
-            2: Roll (not mapped)
-            3: Ascend/Descend
-            4: Yaw Right/Left
-            5: Forward/Backward
-            6: Lateral Right/Left
-            7: Unused
-            8: Camera Tilt Up/Down
-        """
         axes = joy.axes
         buttons = joy.buttons
         
@@ -527,8 +443,6 @@ class BlueROV2():
             self.control_pub.publish(self.override)
     
     def run(self):
-        """Run user code: activates video stream, grabs joystick data, 
-        enables control, allows for optional image logging"""
         rate = rospy.Rate(10)
         
         while not rospy.is_shutdown():
