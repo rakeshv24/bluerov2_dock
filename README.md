@@ -92,7 +92,7 @@ This repository is a modified version of the [bluerov_ros_playground](https://gi
  5. Reload your ROS env.
     - `$ source devel/setup.sh`
 
-## Running
+## Usage
 - Before proceeding further, make sure that all the steps mentioned in the guide for [Software Setup](https://bluerobotics.com/learn/bluerov2-software-setup
 ) has been followed.
 - From a terminal, run `roslaunch bluerov2_dock mission_control.launch`
