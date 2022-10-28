@@ -1,11 +1,3 @@
-"""
-
-LIDAR to 2D grid map example
-
-author: Erno Horvath, Csaba Hajdu based on Atsushi Sakai's scripts
-
-"""
-
 import math
 import numpy as np
 import pdb
