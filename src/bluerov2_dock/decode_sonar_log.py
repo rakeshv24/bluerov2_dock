@@ -239,7 +239,7 @@ def laser_to_occ_map(ang, dist):
     if occupancy_map.shape[0] == 1280 and occupancy_map.shape[1] == 1180: 
         plt.figure()
         plt.imshow(occupancy_map, cmap='binary')
-        np.save("occ_map.npy", occupancy_map)
+        np.save("occ_map_binary.npy", occupancy_map)
         # plt.colorbar()
         plt.show()
 
@@ -284,7 +284,7 @@ if __name__ == "__main__":
                 angles = np.array(list((itertools.chain(*angles))))
                 
                 for l in range(len(ranges)):
-                    if ranges[l] <= 4.5:
+                    if ranges[l] <= 5.5:
                         intensities[l] = 0.0
                 
                 dis = []

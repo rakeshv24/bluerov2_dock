@@ -5,6 +5,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 import time
 from tqdm import tqdm
+from copy import deepcopy
 
 
 class RRT:
@@ -16,31 +17,23 @@ class RRT:
             self.parent = None
 
     def __init__(self):
-        self.filename = "/Users/rakeshvivekanandan/workspace/bluerov2_dock/data/occ_map_binary.npy"
+        # self.filename = "/Users/rakeshvivekanandan/workspace/bluerov2_dock/data/occ_map_binary.npy"
+        self.filename = "/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/data/occ_map_binary.npy"
         self.load_map()
         self.bounds = np.array([[0, self.occ_map.shape[0]], [0, self.occ_map.shape[1]]])
         # self.min_rand = 0
         # self.max_rand = 1000
-        self.step_size = 0.25
-        self.goal_sample_rate = 0.1
-        self.max_nodes = 10000
+        self.step_size = 0.5
+        self.goal_sample_rate = 0.3
+        self.max_nodes = 100000
         self.node_list = []
-        
-    def initialize_states(self, start, goal):
-        self.start = self.Node(start[0], start[1])
-        self.goal = self.Node(goal[0], goal[1])
-        self.print_verbose()
 
     def load_map(self):
         self.occ_map = np.load(self.filename)
         # print(self.occ_map.shape)
-        fig = plt.figure()
-        plt.imshow(self.occ_map.T, cmap="binary")
-        plt.show()
-
-    def print_verbose(self):
-        print('Start: {}, {}'.format(self.start.x, self.start.y))
-        print('Goal: {}, {}'.format(self.goal.x, self.goal.y))
+        # fig = plt.figure()
+        # plt.imshow(self.occ_map.T, cmap="binary")
+        # plt.show()
         
     def check_hit(self, start, goal):
         """
@@ -87,10 +80,10 @@ class RRT:
             nearest_idx = self.get_nearest_node_index(rand_node)
             nearest_node = self.node_list[nearest_idx]
 
-            curr_node = self.node_list[-1]
+            # curr_node = self.node_list[-1]
             new_node = self.steer(nearest_node, rand_node)
             
-            collision_check = self.check_hit(curr_node, new_node)
+            collision_check = self.check_hit(nearest_node, new_node)
             
             if not collision_check:
                 self.node_list.append(new_node)
@@ -156,21 +149,46 @@ class RRT:
         _, idx = tree.query([rand_node.x, rand_node.y], k=1)
         return idx
 
-    def execute(self):
-        goal_check = self.check_hit(self.goal, self.goal)
-        if goal_check:
-            print("Goal state in collision!")
-        else:
-            path = self.planning()
-            if path is not None:
-                # print("Path: ", path)
-                path_length = 0
-                for u in range(1, len(path) - 1):
-                    path_length += math.sqrt((path[u][0] - path[u - 1][0]) ** 2 + (path[u][1] - path[u - 1][1]) ** 2)
-                print("Path length: ", round(path_length, 3))
-                print("Nodes expanded: ", len(self.node_list))
+    def execute(self, waypoints):
+        paths = []
+        fig = plt.figure()
+        for i in range(waypoints.shape[0] - 1):
+            self.start = self.Node(waypoints[i][0], waypoints[i][1])
+            self.goal = self.Node(waypoints[i+1][0], waypoints[i+1][1])
+            self.canvas_map = deepcopy(self.occ_map)
+            goal_check = self.check_hit(self.goal, self.goal)
+            if goal_check:
+                print("Goal state in collision!")
+            else:
+                path = self.planning()
+                if path is not None:
+                    # print("Path: ", path)
+                    path_length = 0
+                    
+                    # for p in path:
+                    #     self.canvas_map[p[0]][p[1]] = 50
+                    
+                    for u in range(1, len(path) - 1):
+                        path_length += math.sqrt((path[u][0] - path[u - 1][0]) ** 2 + (path[u][1] - path[u - 1][1]) ** 2)
+                    path = np.array(path)
+                    paths.append(path)
+                    
+                    print("Path length: ", round(path_length, 3))
+                    print("Nodes expanded: ", len(self.node_list))
+                    
+                    plt.plot(path[:, 1], path[:, 0])
+                    plt.scatter(path[0, 1], path[0, 0], marker="x", c="r")
+                    plt.scatter(path[-1, 1], path[-1, 0], marker="x", c="r")
+        plt.imshow(self.occ_map, cmap="binary")
+        plt.colorbar()
+        plt.show()
 
 if __name__ == '__main__':
     obj = RRT()
-    obj.initialize_states((775, 775), (1015, 680))
-    # obj.execute()
+    
+    waypoints = np.array([[700, 800],
+                          [1000, 700],
+                          [900, 500],
+                          [600, 500]])
+    # obj.initialize_states(waypoints)
+    obj.execute(waypoints)
