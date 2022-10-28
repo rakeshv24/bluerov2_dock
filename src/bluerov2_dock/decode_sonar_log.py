@@ -14,6 +14,8 @@ import rospy
 from sensor_msgs.msg import LaserScan, MultiEchoLaserScan, LaserEcho
 from argparse import ArgumentParser
 import itertools
+import matplotlib.pyplot as plt
+import sonar_to_grid_map as occ
 
 
 def indent(obj, by=' '*4):
@@ -226,15 +228,28 @@ def meters_per_sample(ping_message, v_sound=1500):
     return v_sound * ping_message.sample_period * 12.5e-9
 
 
+def laser_to_occ_map(ang, dist):
+    xy_resolution = 0.05  # x-y grid resolution
+    ox = np.sin(ang) * dist
+    oy = np.cos(ang) * dist
+
+    occupancy_map, min_x, max_x, min_y, max_y, xy_resolution = \
+        occ.generate_ray_casting_grid_map(ox, oy, xy_resolution)
+
+    if occupancy_map.shape[0] == 1280 and occupancy_map.shape[1] == 1180: 
+        plt.figure()
+        plt.imshow(occupancy_map, cmap='binary')
+        np.save("occ_map.npy", occupancy_map)
+        # plt.colorbar()
+        plt.show()
+
+
 if __name__ == "__main__":
     
     try:
         rospy.init_node('decode_sonar_log', anonymous=True)
-        # rate = rospy.Rate(10)
         sonar_pub = rospy.Publisher('/bluerov2_dock/ping360_scan', LaserScan, queue_size=1)
-        # sonar_pub = rospy.Publisher('/bluerov2_dock/ping360_scan', MultiEchoLaserScan, queue_size=1)
-        
-        # while not rospy.is_shutdown():
+
 
         # Parse arguments
         parser = ArgumentParser(description=__doc__)
@@ -245,9 +260,11 @@ if __name__ == "__main__":
         # Open log and begin processing
         log = PingViewerLogReader(args.file)
         
+        angles = []
         intensities = []
         ranges = []
         cnt = 0
+        loop_var = 1
         
         for index, (timestamp, decoded_message) in enumerate(log.parser()):
             if index == 0:
@@ -262,9 +279,28 @@ if __name__ == "__main__":
                     break
                 
             if cnt == 399:
-                ranges = list(itertools.chain(*ranges))
-                intensities = list(itertools.chain(*intensities))
-                            
+                ranges = np.array(list((itertools.chain(*ranges))))
+                intensities = np.array(list((itertools.chain(*intensities))))
+                angles = np.array(list((itertools.chain(*angles))))
+                
+                for l in range(len(ranges)):
+                    if ranges[l] <= 4.5:
+                        intensities[l] = 0.0
+                
+                dis = []
+                ang = []
+
+                for l in range(len(ranges)):
+                    if intensities[l] > 50.0:
+                        dis.append(ranges[l])
+                        ang.append(angles[l])
+                
+                dis = np.array(dis)
+                ang = np.array(ang)
+                
+                if len(ang) > 0:
+                    laser_to_occ_map(ang, dis)
+                
                 range_min = 0
                 range_max = 1199 * meters_per_sample(decoded_message)
                 
@@ -275,12 +311,7 @@ if __name__ == "__main__":
                 angle_max = 399.0 * np.pi / 200.0
                 angle_increment = (np.pi / 200.0) / 1200.0
                 
-                # print(decoded_message)
-                # print(intensities)
-                # print(ranges)
-                
                 sonar_scan = LaserScan()
-                # sonar_scan = MultiEchoLaserScan()
                 sonar_scan.header.frame_id = "map"
                 sonar_scan.angle_min = angle_min
                 sonar_scan.angle_max = angle_max
@@ -294,29 +325,21 @@ if __name__ == "__main__":
                 
                 intensities = []
                 ranges = []
+                angles = []
                 cnt = 0
-                out = input('q to quit, enter to continue: ')
-                if out.lower() == 'q': 
-                    rospy.signal_shutdown("[decode_sensor_log] Node shutting down!")
-                    break
+                loop_var += 1
+                # out = input('q to quit, enter to continue: ')
+                # if out.lower() == 'q': 
+                #     rospy.signal_shutdown("[decode_sensor_log] Node shutting down!")
+                #     break
             else:
-                # intensities = np.frombuffer(decoded_message.data, np.uint8).tolist()
-                # ranges = [i * meters_per_sample(decoded_message) for i in range(len(intensities))]
-                intensities_echo = LaserEcho()
-                ranges_echo = LaserEcho()
-                
                 strengths = np.frombuffer(decoded_message.data, np.uint8).tolist()
                 distances = [i * meters_per_sample(decoded_message) for i in range(len(strengths))]
-                # print(len(decoded_message.data))
-                # print([i for i in distances if i == 0.0])
-                # intensities_echo.echoes = strengths
-                # ranges_echo.echoes = distances
-                
-                # intensities.append(intensities_echo)
-                # ranges.append(ranges_echo)
+                angle = decoded_message.angle * (np.pi / 200.0)
                 
                 intensities.append(strengths)
                 ranges.append(distances)
+                angles.append([angle] * len(distances))
                 cnt += 1
             
         # rate.sleep()
