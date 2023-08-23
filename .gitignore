@@ -1,7 +1,6 @@
 *.tar.gz
 *.png
 *.pyc
-/model
 /output/rosbags
 /output/terminal
 /misc
