@@ -1,0 +1,48 @@
+tolerance: 0.05
+x0: [0., 0., 5., 0., 0., 0., 0., 0., 0., 0., 0., 0.]
+xr: [2., 1., 5., 0., 0., 0.15, 0., 0., 0., 0., 0., 0.]
+t_len: 3600.
+num_trials: 1
+static_target: True
+
+wec:
+  A: 0.5
+  omega: 0.1 
+
+pf:
+  particles: 500
+  cov: 1e-8
+
+algorithm: fse_mpc
+
+environments:
+  # 1:
+  #   current: 
+  #     value: [0.0, 0.0] # vx, vy
+  #     name: zero
+  #     type: constant
+  2:
+    current: 
+      value: [0.5, 0.] # vx, vy
+      name: xy
+      type: constant
+  # 3:
+  #   current: 
+  #     value: [-1.0, 0.0] # vx, vy
+  #     name: xneg_1
+  #     type: constant
+  # 4:
+  #   current: 
+  #     value: [0.0, 2.0] # vx, vy
+  #     name: y2
+  #     type: constant
+  # 5:
+  #   current:
+  #     value: [0.03183, 12.0] # Amplitude, Time Period [h]
+  #     name: double_gyre
+  #     type: time-varying
+  # 6:
+  #   current:
+  #     value: [0.5, 6.0] # Amplitude, Time Period [h]
+  #     name: double_gyre_fast
+  #     type: time-varying

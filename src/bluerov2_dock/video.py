@@ -7,7 +7,6 @@ import rospy
 from cv_bridge import CvBridge
 
 from sensor_msgs.msg import Image
-
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
 
@@ -25,7 +24,7 @@ class Video():
         video_source (string): Udp source ip and port
     """
 
-    def __init__(self, port=5600):
+    def __init__(self):
         """Summary
 
         Args:
@@ -34,28 +33,42 @@ class Video():
         self.cvbridge = CvBridge()
         
         Gst.init(None)
+        registry = Gst.Registry.get()
 
-        self.port = port
+        nvcodec_plugin = Gst.Registry.lookup_feature(registry, "nvcodec")
+        if nvcodec_plugin is not None:
+            Gst.PluginFeature.set_rank(nvcodec_plugin, 0)
+
+        libav_plugin = Gst.Registry.lookup_feature(registry, "libav")
+        if libav_plugin is not None:
+            Gst.PluginFeature.set_rank(libav_plugin, Gst.Rank.PRIMARY)
+
+        self.port = rospy.get_param("/video_feed/video_udp_port")
         self._frame = None
 
-        # [Software component diagram](https://www.ardusub.com/software/components.html)
         # UDP video stream (:5600)
         self.video_source = 'udpsrc port={}'.format(self.port)
+
+        # RTSP video stream
+        # self.video_source = 'rtspsrc location=rtsp://192.168.2.2:8554/video_stream__dev_video2 latency=0'
+
         # [Rasp raw image](http://picamera.readthedocs.io/en/release-0.7/recipes2.html#raw-image-capture-yuv-format)
         # Cam -> CSI-2 -> H264 Raw (YUV 4-4-4 (12bits) I420)
         self.video_codec = '! application/x-rtp, payload=96 ! rtph264depay ! h264parse ! avdec_h264'
+        # self.video_codec = '! application/x-rtp, payload=96 ! rtph264depay ! h264parse ! v4l2h264dec'
+        # self.video_codec = '! application/x-rtp, payload=96 ! rtpjpegdepay ! jpegdec'
+
         # Python don't have nibble, convert YUV nibbles (4-4-4) to OpenCV standard BGR bytes (8-8-8)
         self.video_decode = \
-            '! decodebin ! videoconvert ! video/x-raw,format=(string)BGR ! videoconvert'
+            '! videoconvert ! video/x-raw,format=(string)BGR'
+
         # Create a sink to get data
         self.video_sink_conf = \
             '! appsink emit-signals=true sync=false max-buffers=2 drop=true'
 
         self.video_pipe = None
         self.video_sink = None
-
         self.video_publisher = rospy.Publisher('/BlueROV2/video', Image, queue_size=1)
-
         self.run()
 
     def start_gst(self, config=None):
@@ -119,7 +132,7 @@ class Video():
         Returns:
             bool: true if frame is available
         """
-        return type(self._frame) != type(None)
+        return not isinstance(self._frame, type(None))
 
     def run(self):
         """ Get frame to update _frame
@@ -146,14 +159,10 @@ class Video():
 
 
 if __name__ == '__main__':
+    rospy.init_node('video_feed', anonymous=True)
     video = Video()
 
-    while True:
-        if not video.frame_available():
-            continue
-
-        frame = video.frame()
-        cv2.imshow('frame', frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-        
+    try:
+        rospy.spin()
+    except KeyboardInterrupt:
+        print("shutting down the node")

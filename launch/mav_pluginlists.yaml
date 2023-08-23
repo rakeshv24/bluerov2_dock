@@ -1,21 +1,22 @@
 plugin_blacklist:
-# common
-- 3dr_radio
-- actuator_control
-- ftp
-- global_position
-- safety_area
-- setpoint_attitude
-- sys_time
-# extras
-- image_pub
-- 'mocap_*'
-- px4flow
-- 'vision_*'
-- distance_sensor
-- vibration
-- altitude
+  - 3dr_radio
+  - ftp
+  - safety_area
+  - sys_time
+  # - 'mocap_*'
+  # - px4flow
+  # - distance_sensor
+  # - vibration
+  # - altitude
 
-plugin_whitelist: []
-#- 'sys_*'
+plugin_whitelist:
+  - sys_status
+  - command
+  - imu
+  - rc_io
+  - param
+  - vision*
+  - local*
+  - global_position
+  - home_position
 

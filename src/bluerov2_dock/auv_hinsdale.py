@@ -1,24 +1,31 @@
+import pdb
+
+import numpy as np
 import yaml
-from casadi import SX, sin, cos, tan, skew, vertcat, mtimes, fabs, diag, inv, if_else, exp
+from casadi import (MX, SX, cos, diag, evalf, fabs, horzcat, if_else, inv,
+                    jacobian, linearize, mtimes, sin, skew, tan, vertcat)
+
 
 class AUV(object):
     def __init__(self, vehicle_dynamics):
+        self.vehicle_length = vehicle_dynamics["vehicle_length"]
         self.vehicle_mass = vehicle_dynamics["vehicle_mass"]
         self.rb_mass =  vehicle_dynamics["rb_mass"]
         self.added_mass =  vehicle_dynamics["added_mass"]
         self.lin_damp =  vehicle_dynamics["lin_damp"]
         self.quad_damp = vehicle_dynamics["quad_damp"]
         self.tam =  vehicle_dynamics["tam"]
-        self.tcm =  vehicle_dynamics["tcm"]
         self.inertial_terms = vehicle_dynamics["inertial_terms"]
         self.inertial_skew = vehicle_dynamics["inertial_skew"]
         self.r_gb_skew = vehicle_dynamics["r_gb_skew"]
         self.W = vehicle_dynamics["W"]
         self.B = vehicle_dynamics["B"]
-        self.z_g = vehicle_dynamics["z_g"]
-        self.z_b = vehicle_dynamics["z_b"]
-        self.cog_to_cob = self.z_g - self.z_b
+        self.cog = vehicle_dynamics["cog"]
+        self.cob = vehicle_dynamics["cob"]
+        self.cog_to_cob = self.cog - self.cob
         self.neutral_bouy = vehicle_dynamics["neutral_bouy"]
+        self.curr_timestep = 0.0
+        self.ocean_current_data = []
         
         # Precompute the total mass matrix (w/added mass) inverted for future dynamic calls
         self.mass_inv = inv(self.rb_mass + self.added_mass)
@@ -30,13 +37,14 @@ class AUV(object):
         f = open(filename, "r")
         params = yaml.load(f.read(), Loader=yaml.SafeLoader)
         
+        l = params['l']
         m = params['m']
         Ixx = params['Ixx']
         Iyy = params['Iyy']
         Izz = params['Izz']
         I_b = SX.eye(3) * [Ixx, Iyy, Izz]
 
-        skew_r_gb = skew([0.0, 0.0, params['z_g']])
+        skew_r_gb = skew(SX(params['cog']))
         skew_I = skew([Ixx, Iyy, Izz])
 
         rb_mass = diag(SX([m,m,m,Ixx,Iyy,Izz]))
@@ -44,20 +52,20 @@ class AUV(object):
         rb_mass[3:6, 0:3] = m * skew_r_gb
 
         vehicle_dynamics = {}
+        vehicle_dynamics["vehicle_length"] = l
         vehicle_dynamics["vehicle_mass"] = m
         vehicle_dynamics["rb_mass"] = rb_mass
         vehicle_dynamics["added_mass"] = -diag(SX(params['m_added']))
         vehicle_dynamics["lin_damp"] = -diag(SX(params['d_lin']))
         vehicle_dynamics["quad_damp"] = -diag(SX(params['d_quad']))
         vehicle_dynamics["tam"] = SX(params['tam'])
-        vehicle_dynamics["tcm"] = SX(params['tcm'])
         vehicle_dynamics["r_gb_skew"] = skew_r_gb
         vehicle_dynamics["inertial_skew"] = skew_I
         vehicle_dynamics["inertial_terms"] = I_b
         vehicle_dynamics["W"] = params['W']
         vehicle_dynamics["B"] = params['B']
-        vehicle_dynamics["z_g"] = params['z_g']
-        vehicle_dynamics["z_b"] = params['z_b']
+        vehicle_dynamics["cog"] = SX(params['cog'])
+        vehicle_dynamics["cob"] = SX(params['cob'])
         vehicle_dynamics["neutral_bouy"] = params['neutral_bouy']
 
         return cls(vehicle_dynamics)
@@ -97,10 +105,11 @@ class AUV(object):
         skew_I_v2 = skew(mtimes(self.inertial_terms, v2))
         
         coriolis_force = SX.zeros((6,6))
-        # coriolis_force[0:3, 3:6] = -self.vehicle_mass * (skew_v1 + mtimes(skew_v2, self.r_gb_skew))
-        # coriolis_force[3:6, 0:3] = -self.vehicle_mass * (skew_v1 - mtimes(self.r_gb_skew, skew_v2))
-        coriolis_force[0:3, 3:6] = -self.vehicle_mass * mtimes(skew_v2, self.r_gb_skew)
-        coriolis_force[3:6, 0:3] = self.vehicle_mass * mtimes(self.r_gb_skew, skew_v2)
+        coriolis_force[0:3, 0:3] = self.vehicle_mass * skew_v2
+        coriolis_force[0:3, 3:6] = self.vehicle_mass * (-skew_v1 - mtimes(skew_v2, self.r_gb_skew))
+        coriolis_force[3:6, 0:3] = self.vehicle_mass * (-skew_v1 + mtimes(self.r_gb_skew, skew_v2))
+        # coriolis_force[0:3, 3:6] = -self.vehicle_mass * mtimes(skew_v2, self.r_gb_skew)
+        # coriolis_force[3:6, 0:3] = self.vehicle_mass * mtimes(self.r_gb_skew, skew_v2)
         coriolis_force[3:6, 3:6] = -skew_I_v2
         return coriolis_force
     
@@ -117,6 +126,9 @@ class AUV(object):
         coriolis_force[0:3, 3:6] = -skew(mtimes(A_11, v1) + mtimes(A_12, v2))
         coriolis_force[3:6, 0:3] = -skew(mtimes(A_11, v1) + mtimes(A_12, v2))
         coriolis_force[3:6, 3:6] = -skew(mtimes(A_21, v1) + mtimes(A_22, v2))
+        # coriolis_force[0:3, 3:6] = -skew(mtimes(A_11, v1))
+        # coriolis_force[3:6, 0:3] = -skew(mtimes(A_11, v1))
+        # coriolis_force[3:6, 3:6] = -skew(mtimes(A_22, v2))
         return coriolis_force
 
     def compute_damping_force(self, v):
@@ -131,12 +143,22 @@ class AUV(object):
                 (self.W - self.B) * sin(x[4]),
                 -(self.W - self.B) * cos(x[4]) * sin(x[3]),
                 -(self.W - self.B) * cos(x[4]) * cos(x[3]),
-                self.z_g * self.W * cos(x[4]) * sin(x[3]),
-                self.z_g * self.W * sin(x[4]),
-                0.0)
+                -(self.cog[1] * self.W - self.cob[1] * self.B) * cos(x[4]) * cos(x[3]) + (self.cog[2] * self.W - self.cob[2] * self.B) * cos(x[4]) * sin(x[3]),
+                (self.cog[2] * self.W - self.cob[2] * self.B) * sin(x[4]) + (self.cog[0] * self.W - self.cob[0] * self.B) * cos(x[4]) * cos(x[3]),
+                -(self.cog[0] * self.W - self.cob[0] * self.B) * cos(x[4]) * sin(x[3]) - (self.cog[1] * self.W - self.cob[1] * self.B) * sin(x[4]))
+                # self.z_g * self.W * cos(x[4]) * sin(x[3]),
+                # self.z_g * self.W * sin(x[4]),
+                # 0.0)
         return restorive_force
     
-    def compute_nonlinear_dynamics(self, x, u, f_B=SX.zeros((3,1)), f_B_dot=SX.zeros((3,1)), f_est=False, complete_model=False):
+    def compute_wave_force(self, x, nu_w, nu_w_dot):
+        wave_force = SX.zeros((6,1))
+        wave_force[0, 0] = self.added_mass[0, 0] * nu_w_dot[0, 0] + (self.lin_damp[0, 0] + (self.quad_damp[0, 0] * fabs(nu_w[0, 0]))) * nu_w[0, 0]
+        wave_force[2, 0] = self.added_mass[2, 2] * nu_w_dot[2, 0] + (self.lin_damp[2, 2] + (self.quad_damp[2, 2] * fabs(nu_w[2, 0]))) * nu_w[2, 0]
+        wave_force[4, 0] = 0
+        return wave_force
+    
+    def compute_nonlinear_dynamics(self, x, u, f_B=SX.zeros((3,1)), f_B_dot=SX.zeros((3,1)), nu_w=SX.zeros((3,1)), nu_w_dot=SX.zeros((3,1)), f_est=False, complete_model=False):
         eta = x[0:6, :]
         nu_r = x[6:12, :]
         # nu = x[6:12, :]
@@ -144,8 +166,18 @@ class AUV(object):
         tf_mtx = self.compute_transformation_matrix(eta) # Gets the transformation matrix to convert from Body to NED frame
         tf_mtx_inv = inv(tf_mtx)
         
-        nu_c = vertcat(f_B, SX.zeros((3,1)))
+        nu_w_B = mtimes(tf_mtx_inv[0:3, 0:3], nu_w)
+        nu_w_dot_B = mtimes(tf_mtx_inv[0:3, 0:3], nu_w_dot)
+        eta_B = mtimes(tf_mtx_inv, eta)
         
+        # nu_c = SX.zeros(6,1)
+        nu_c = vertcat(f_B, SX.zeros((3,1)))
+        # nu_c = vertcat(f, SX.zeros(3,1))
+        # nu_c_dot = SX.zeros((6,1))
+        
+        # Converts ocean current disturbances to Body frame
+        # nu_c = mtimes(tf_mtx_inv, nu_c_ned)
+
         # Computes total vehicle velocity
         nu = nu_r + nu_c
     
@@ -155,6 +187,7 @@ class AUV(object):
         nu_c_dot = if_else(f_est,
                            mtimes(skew_mtx, nu_c),
                            vertcat(f_B_dot, SX.zeros((3,1))))
+        # nu_c_dot = jacobian(nu_c, t)
         
         # Kinematic Equation
         # Convert the relative velocity from Body to NED and add it with the ocean current velocity in NED to get the total velocity of the vehicle in NED
@@ -167,13 +200,63 @@ class AUV(object):
         # eta_dot = mtimes(tf_mtx, (nu_r + nu_c))
         
         # Force computation
-        # normalized_force = mtimes(self.tam, u)
-        # thrust_force = mtimes(self.tam, u)
-        # thrust_force = (80.0 / (1 + exp(-4 * (normalized_force ** 3)))) - 40.0
-        # total_force = mtimes(self.tcm, thrust_force)
-        # total_force = mtimes(self.tcm, u)
-        total_force = u
+        # thruster_force = mtimes(self.tam, u)
+        thruster_force = u
+        restorive_force = self.compute_restorive_force(eta)
+        damping_force = self.compute_damping_force(nu_r)
+        coriolis_force_rb = self.compute_C_RB_force(nu)
+        coriolis_force_added = self.compute_C_A_force(nu_r)
+        coriolis_force_RB_A = self.compute_C_RB_force(nu_r) + self.compute_C_A_force(nu_r)
+        wave_force = self.compute_wave_force(eta_B, nu_w_B, nu_w_dot_B)
+            
+        # Full Body Dynamics
+        # nu_r_dot = mtimes(self.mass_inv, (thruster_force - mtimes(self.rb_mass, nu_c_dot) - mtimes(coriolis_force_rb, nu) - mtimes(coriolis_force_added, nu_r) - mtimes(damping_force, nu_r) - restorive_force))
         
+        # Simplified Dynamics
+        # nu_r_dot = mtimes(self.mass_inv, (thruster_force - mtimes((coriolis_force_rel + damping_force), nu_r) - restorive_force))
+        
+        nu_r_dot = if_else(complete_model,
+                           mtimes(self.mass_inv, (thruster_force + wave_force - mtimes(self.rb_mass, nu_c_dot) - mtimes(coriolis_force_rb, nu) - mtimes(coriolis_force_added, nu_r) - mtimes(damping_force, nu_r) - restorive_force)),
+                           mtimes(self.mass_inv, (thruster_force + wave_force - mtimes(coriolis_force_RB_A, nu_r) - mtimes(damping_force, nu_r) - restorive_force))
+                           )
+        
+        # nu_dot = mtimes(self.mass_inv, (thruster_force + mtimes(self.added_mass, nu_c_dot) - mtimes(coriolis_force_rb, nu) - mtimes(coriolis_force_added, nu_r) - mtimes(damping_force, nu_r) - restorive_force))
+        # nu_dot = nu_c_dot + nu_r_dot
+        
+        # next_eta = eta + eta_dot * dt
+        # next_nu = nu + nu_dot * dt
+
+        # x_dot = vertcat(eta_dot, nu_r_dot)
+        chi_dot = vertcat(eta_dot, nu_r_dot, nu_c_dot)
+        # x_dot = vertcat(eta_dot, nu_dot)
+        # x_k_1 = vertcat(next_eta, next_nu)
+                    
+        return chi_dot
+        
+    def compute_lqr_dynamics(self, x, u, f_B=SX.zeros((3,1)), f_B_dot=SX.zeros((3,1)), complete_model=False):
+        eta = x[0:6, :]
+        nu_r = x[6:12, :]
+        # nu = x[6:12, :]
+        
+        tf_mtx = self.compute_transformation_matrix(eta) # Gets the transformation matrix to convert from Body to NED frame
+        
+        nu_c = vertcat(f_B, SX.zeros((3,1)))
+        
+        # Computes total vehicle velocity
+        nu = nu_r + nu_c
+    
+        # Computes the ocean current acceleration in Body frame
+        nu_c_dot = vertcat(f_B_dot, SX.zeros((3,1)))
+        
+        # Kinematic Equation
+        # Convert the relative velocity from Body to NED and add it with the ocean current velocity in NED to get the total velocity of the vehicle in NED
+        eta_dot = if_else(complete_model,
+                    mtimes(tf_mtx, (nu_r + nu_c)),
+                    mtimes(tf_mtx, nu_r)
+                )
+        
+        # Force computation
+        thruster_force = mtimes(self.tam, u)
         restorive_force = self.compute_restorive_force(eta)
         damping_force = self.compute_damping_force(nu_r)
         coriolis_force_rb = self.compute_C_RB_force(nu)
@@ -187,12 +270,15 @@ class AUV(object):
         # nu_r_dot = mtimes(self.mass_inv, (thruster_force - mtimes((coriolis_force_rel + damping_force), nu_r) - restorive_force))
         
         nu_r_dot = if_else(complete_model,
-                           mtimes(self.mass_inv, (total_force - mtimes(self.rb_mass, nu_c_dot) - mtimes(coriolis_force_rb, nu) - mtimes(coriolis_force_added, nu_r) - mtimes(damping_force, nu_r) - restorive_force)),
-                           mtimes(self.mass_inv, (total_force - mtimes(coriolis_force_RB_A, nu_r) - mtimes(damping_force, nu_r) - restorive_force))
+                           mtimes(self.mass_inv, (thruster_force - mtimes(self.rb_mass, nu_c_dot) - mtimes(coriolis_force_rb, nu) - mtimes(coriolis_force_added, nu_r) - mtimes(damping_force, nu_r) - restorive_force)),
+                           mtimes(self.mass_inv, (thruster_force - mtimes(coriolis_force_RB_A, nu_r) - mtimes(damping_force, nu_r) - restorive_force))
                            )
-
+        
         x_dot = vertcat(eta_dot, nu_r_dot)
-        # chi_dot = vertcat(eta_dot, nu_r_dot, nu_c_dot)
                     
         return x_dot
     
+    def get_linear_model(self, xp, up, f_B, f_B_dot, model_type):
+        A = jacobian(self.compute_lqr_dynamics(xp, up, f_B=f_B, f_B_dot=f_B_dot, complete_model=model_type), xp)
+        B = jacobian(self.compute_lqr_dynamics(xp, up, f_B=f_B, f_B_dot=f_B_dot, complete_model=model_type), up)
+        return horzcat(A, B)

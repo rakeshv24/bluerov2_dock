@@ -9,8 +9,9 @@ import numpy as np
 import imutils
 import sys
 import pandas as pd
+import os
 
-sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/bluerov2_dock')
+# sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/bluerov2_dock')
 
 try:
     import video
@@ -79,7 +80,9 @@ class BlueROV2():
         # self.initialize_timers()
         
     def load_pwm_lookup(self):
-        csv = pd.read_csv("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/data/T200_data_16V.csv")
+        cwd = os.path.dirname(__file__)
+        # csv = pd.read_csv("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/data/T200_data_16V.csv")
+        csv = pd.read_csv(cwd + "/../../data/T200_data_16V.csv")
 
         thrust_vals = csv['Force'].tolist()
         neg_thrust = [i for i in thrust_vals if i < 0]
@@ -247,18 +250,18 @@ class BlueROV2():
         except Exception as e:
             rospy.logerr_throttle(10, "[BlueROV2][store_sub_data] Not receiving {} data".format(key))
     
-    # def setup_video(self):
-    #     # Set up video feed
-    #     self.cam = None
-    #     self.log_images = False
-    #     try:
-    #         video_udp_port = rospy.get_param("/mission_control/video_udp_port")
-    #         self.log_images = rospy.get_param("/mission_control/log_images")
-    #         rospy.loginfo("video_udp_port: {}".format(video_udp_port))
-    #         self.cam = video.Video(video_udp_port)
-    #     except Exception as e:
-    #         rospy.logerr("[BlueROV2][setup_video] Failed to setup video through custom UDP port. Initializing through default port...")
-    #         self.cam = video.Video()
+    def setup_video(self):
+        # Set up video feed
+        self.cam = None
+        self.log_images = False
+        try:
+            video_udp_port = rospy.get_param("/mission_control/video_udp_port")
+            self.log_images = rospy.get_param("/mission_control/log_images")
+            rospy.loginfo("video_udp_port: {}".format(video_udp_port))
+            self.cam = video.Video(video_udp_port)
+        except Exception as e:
+            rospy.logerr("[BlueROV2][setup_video] Failed to setup video through custom UDP port. Initializing through default port...")
+            self.cam = video.Video()
     
     def thrust_to_pwm(self, thrust):
         values = []

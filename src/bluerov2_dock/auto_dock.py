@@ -4,7 +4,7 @@ import numpy as np
 import sys
 import rospy
 
-sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/bluerov2_dock')
+# sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/bluerov2_dock')
 
 from casadi import evalf
 from auv_hinsdale import AUV
@@ -12,9 +12,17 @@ from mpc_hinsdale import MPC
 
 
 class MPControl():
-    def __init__(self):    
-        auv_yaml = os.path.join("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/config/auv_bluerov2.yaml")
-        mpc_yaml = os.path.join("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/config/mpc_bluerov2.yaml")
+    def __init__(self):
+        cwd = os.path.dirname(__file__)
+            
+        # auv_yaml = cwd + "/../../config/auv_bluerov2.yaml"
+        # mpc_yaml = cwd + "/../../config/mpc_bluerov2.yaml"
+                    
+        auv_yaml = cwd + "/../../config/auv_bluerov2_heavy.yaml"
+        mpc_yaml = cwd + "/../../config/mpc_bluerov2_heavy.yaml"
+        
+        # auv_yaml = os.path.join("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/config/auv_bluerov2.yaml")
+        # mpc_yaml = os.path.join("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/config/mpc_bluerov2.yaml")
         
         # auv_yaml = os.path.join("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/config/auv_bluerov2_heavy.yaml")
         # mpc_yaml = os.path.join("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/config/mpc_bluerov2_heavy.yaml")
@@ -99,3 +107,7 @@ class MPControl():
                     
             # return u, x_sim, False
             return u, False
+
+
+if __name__ == "__main__":
+    mpc = MPControl()
