@@ -11,9 +11,10 @@ import threading
 from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import Image, CameraInfo
 from std_msgs.msg import Header
-from tf2_ros import TransformException
+from tf2_ros import TransformException, TransformStamped
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
+from tf2_ros.transform_broadcaster import TransformBroadcaster
 from tf.transformations import quaternion_from_euler
 import tf2_geometry_msgs
 from geometry_msgs.msg import PoseStamped
@@ -79,6 +80,7 @@ class Aruco():
         # Provide access to TF2
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer)
+        self.tf_broadcaster = TransformBroadcaster()
 
         self.initialize_subscribers_publishers()
 
@@ -183,6 +185,7 @@ class Aruco():
             # Marker Pose Estimation
             for i in range(des_marker_corners.shape[0]):
                 marker_id = detected_marker_ids[i][0]
+                marker_id_str = "marker_{0}".format(marker_id)
                 marker_size = self.marker_size[marker_id]
                 # print(i)
                 # rospy.loginfo("[Aruco][marker_detection] Markers detected")
@@ -238,10 +241,25 @@ class Aruco():
                 tf_marker_cam = np.eye(4)
                 tf_marker_cam[:3, :3] = rmat
                 tf_marker_cam[:3, 3] = tvec
+                
+                quat = R.from_matrix(tf_marker_cam[:3, :3]).as_quat()
+                
+                tf_marker_to_cam = TransformStamped()
+                tf_marker_to_cam.header.frame_id = "camera_link"
+                tf_marker_to_cam.child_frame_id = marker_id_str
+                tf_marker_to_cam.header.stamp = rospy.Time.now()
+                tf_marker_to_cam.transform.translation.x = tf_marker_cam[0, 3]
+                tf_marker_to_cam.transform.translation.y = tf_marker_cam[1, 3]
+                tf_marker_to_cam.transform.translation.z = tf_marker_cam[2, 3]
+                tf_marker_to_cam.transform.rotation.x = quat[0]
+                tf_marker_to_cam.transform.rotation.y = quat[1]
+                tf_marker_to_cam.transform.rotation.z = quat[2]
+                tf_marker_to_cam.transform.rotation.w = quat[3]
+                
+                self.tf_broadcaster.sendTransform(tf_marker_to_cam)
 
                 # marker frame -> map frame
                 try:
-                    marker_id_str = "marker_{0}".format(marker_id)
                     map_to_marker = self.tf_buffer.lookup_transform(marker_id_str, "map", rospy.Time())
                 except TransformException as e:
                     rospy.logwarn(
@@ -269,6 +287,21 @@ class Aruco():
                 # rospy.loginfo(f"rotation: {R.from_quat(orientation).as_euler('xyz')}")
 
                 tf_map_cam = tf_marker_cam @ tf_map_marker
+                
+                quat = R.from_matrix(tf_map_cam[:3, :3]).as_quat()
+                tf_map_to_cam = TransformStamped()
+                tf_map_to_cam.header.frame_id = "map"
+                tf_map_to_cam.child_frame_id = "camera_link"
+                tf_map_to_cam.header.stamp = rospy.Time.now()
+                tf_map_to_cam.transform.translation.x = tf_map_cam[0, 3]
+                tf_map_to_cam.transform.translation.y = tf_map_cam[1, 3]
+                tf_map_to_cam.transform.translation.z = tf_map_cam[2, 3]
+                tf_map_to_cam.transform.rotation.x = quat[0]
+                tf_map_to_cam.transform.rotation.y = quat[1]
+                tf_map_to_cam.transform.rotation.z = quat[2]
+                tf_map_to_cam.transform.rotation.w = quat[3]
+                
+                # self.tf_broadcaster.sendTransform(tf_map_to_cam)
                 
                 # rospy.loginfo(f"translation: {tf_map_cam[:3, 3]}")
                 # rospy.loginfo(f"rotation: {R.from_matrix(tf_map_cam[:3, :3]).as_euler('xyz')}")
@@ -299,7 +332,13 @@ class Aruco():
                 # rospy.loginfo(translation)
                 # rospy.loginfo(R.from_quat(orientation).as_euler('xyz'))
                 
-                tf_map_base = tf_cam_base @ tf_map_cam
+                tf_map_base =  tf_cam_base @ tf_map_cam
+                # tf_map_base =  tf_map_cam @ tf_cam_base
+
+                tf_map_to_base = TransformStamped()
+                tf_map_to_base.header.frame_id = "map"
+                tf_map_to_base.child_frame_id = "base_link"
+                tf_map_to_base.header.stamp = rospy.Time.now()
 
                 rov_pose = PoseStamped()
                 rov_pose.header.frame_id = "map"
@@ -309,19 +348,29 @@ class Aruco():
                 rov_pose.pose.position.x = x
                 rov_pose.pose.position.y = y
                 rov_pose.pose.position.z = z
+                tf_map_to_base.transform.translation.x = x
+                tf_map_to_base.transform.translation.y = y
+                tf_map_to_base.transform.translation.z = z
+
 
                 x, y, z, w = R.from_matrix(tf_map_base[:3, :3]).as_quat()
                 rov_pose.pose.orientation.x = x
                 rov_pose.pose.orientation.y = y
                 rov_pose.pose.orientation.z = z
                 rov_pose.pose.orientation.w = w
+                tf_map_to_base.transform.rotation.x = x
+                tf_map_to_base.transform.rotation.y = y
+                tf_map_to_base.transform.rotation.z = z
+                tf_map_to_base.transform.rotation.w = w
+                                
+                # self.tf_broadcaster.sendTransform(tf_map_to_base)
                 
                 # rospy.loginfo("[Aruco][marker_detection] ROV Pose: {0}".format(rov_pose))
 
                 self.vision_pose_pub.publish(rov_pose)
                 
-        # cv2.imshow("marker", frame)
-        # cv2.waitKey(1)
+        cv2.imshow("marker", frame)
+        cv2.waitKey(1)
 
 
     def detect_callback(self, req):

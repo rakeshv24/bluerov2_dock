@@ -16,9 +16,9 @@
     <joint name="camera_joint" type="fixed">
       <parent link="base_link"/>
       <child link="camera_link"/>
-      <origin rpy="1.571 0 -1.571" xyz="0.21 0 0.067" />
+      <origin rpy="-1.571 0 -1.571" xyz="0.21 0 0.067" />
       <!-- <origin rpy="3.142 0 1.571" xyz="0 0.21 -0.067"/> -->
-      <!-- <axis xyz="0 1 0" /> -->
+      <!-- <axis xyz="0 0 1" /> -->
     </joint>
 
     <!-- Import T200 macro -->

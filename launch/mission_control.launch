@@ -16,7 +16,7 @@
   <arg name="robot_description_xacro" default="$(find bluerov2_dock)/model/bluerov2_heavy/config.xacro"/>
 
 
-  <!-- <node pkg="mavros" type="mavros_node" name="mavros" required="true" clear_params="true" output="$(arg log_output)">
+  <node pkg="mavros" type="mavros_node" name="mavros" required="true" clear_params="true" output="$(arg log_output)">
     <param name="fcu_url" value="$(arg fcu_url)"/>
     <param name="gcs_url" value="$(arg gcs_url)"/>
     <param name="system_id" value="$(arg system_id)"/>
@@ -25,12 +25,13 @@
     <param name="target_component_id" value="$(arg tgt_component)"/>
     <rosparam command="load" file="$(arg pluginlists_yaml)"/>
     <rosparam command="load" file="$(arg config_yaml)"/>
-  </node> -->
+  </node>
 
   <!-- start the joystick driver -->
-  <!-- <node respawn="true" pkg="joy" type="joy_node" name="joy_node">
+  <node respawn="true" pkg="joy" type="joy_node" name="joy_node">
     <param name="dev" type="string" value="$(arg joy_dev)" />
-  </node> -->
+  </node>
+
   <node pkg="rosservice" type="rosservice" name="mavros_set_stream" args="call --wait /mavros/set_stream_rate 0 10 1" launch-prefix="taskset -c 1"/>
 
   <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_thruster1" args="0.14 -0.092 0 -1.571 1.571 -0.785 base_link thruster1" />
@@ -43,12 +44,11 @@
   <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_thruster8" args="-0.118 0.215 0.064 0 0 0 base_link thruster8" />
   
   <node pkg="tf2_ros" type="static_transform_publisher" name="base_footprint_to_base_link" args="0 0 0 0 0 0 base_footprint base_link" />
-  <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_base_footprint" args="0 0 0 0 0 0 base_link base_footprint" />
-  <node pkg="tf2_ros" type="static_transform_publisher" name="marker_7_to_map_tf_broadcaster" args="0 0 0 0 0 0 map marker_7" />
-  <node pkg="tf2_ros" type="static_transform_publisher" name="marker_1_to_map_tf_broadcaster" args="0 0 0 0 0 0 map marker_1" />
-  
+  <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_base_footprint" args="0 0 0 0 0 0 base_link base_footprint" /> -->
+  <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="marker_7_to_map_tf_broadcaster" args="0 0 0 1.571 0 -1.571 map marker_7" /> -->
+  <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="marker_1_to_map_tf_broadcaster" args="0 0 0 0 0 1.571 map marker_1" /> -->
   <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_marker_7_tf_broadcaster" args="0 0 0 -1.571 0 -1.571 marker_7 map" /> -->
-  <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_marker_1_tf_broadcaster" args="0 0 0 0 0 0 marker_1 map" /> -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_marker_1_tf_broadcaster" args="0 0 0 0 1.571 -1.571 marker_1 map" />
 
   <param name="robot_description" command="$(find xacro)/xacro $(arg robot_description_xacro)"/>
   <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" />
@@ -59,11 +59,13 @@
   <!-- <node pkg="bluerov2_dock" type="pwm_publish_node.py" name="pwm_publish" output="$(arg log_output)" launch-prefix="taskset -c 3">
   </node> -->
 
-  <!-- <node pkg="bluerov2_dock" type="video.py" name="video_feed" output="$(arg log_output)" launch-prefix="taskset -c 4">
+  <node pkg="bluerov2_dock" type="video.py" name="video_feed" output="$(arg log_output)" launch-prefix="taskset -c 4">
       <param name="video_udp_port" value="$(arg video_udp_port)"/>
   </node>
 
   <node pkg="bluerov2_dock" type="marker_detection.py" name="marker_detection" output="$(arg log_output)" launch-prefix="taskset -c 5">
-  </node> -->
+  </node>
+
+  <!-- <node pkg="rviz" type="rviz" name="rviz" args="-d $(find bluerov2_dock)/rviz/bluerov.rviz" /> -->
 
 </launch>
