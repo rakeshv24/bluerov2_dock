@@ -45,10 +45,15 @@
   
   <node pkg="tf2_ros" type="static_transform_publisher" name="base_footprint_to_base_link" args="0 0 0 0 0 0 base_footprint base_link" />
   <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_base_footprint" args="0 0 0 0 0 0 base_link base_footprint" /> -->
-  <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="marker_7_to_map_tf_broadcaster" args="0 0 0 1.571 0 -1.571 map marker_7" /> -->
-  <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="marker_1_to_map_tf_broadcaster" args="0 0 0 0 0 1.571 map marker_1" /> -->
-  <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_marker_7_tf_broadcaster" args="0 0 0 -1.571 0 -1.571 marker_7 map" /> -->
-  <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_marker_1_tf_broadcaster" args="0 0 0 0 1.571 -1.571 marker_1 map" />
+  <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_marker1_tf_broadcaster" args="1 0 0 0 0 0 map marker_1" /> -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="marker1_to_map_tf_broadcaster" args="0 0 0 0 1.571 -1.571 marker_1 map" />
+  <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="marker7_to_map_tf_broadcaster" args="-0.434 -0.1869 0.021 0 1.571 -1.571 marker_7 map" /> L
+  <node pkg="tf2_ros" type="static_transform_publisher" name="marker8_to_marker_7_tf_broadcaster" args="0 0.3019 -0.036 0 0 0 marker_8 marker7" /> R
+  <node pkg="tf2_ros" type="static_transform_publisher" name="marker2_to_marker_7_tf_broadcaster" args="0.868 0.6045 0.381 0 0 0 marker_2 marker7" /> BR
+  <node pkg="tf2_ros" type="static_transform_publisher" name="marker9_to_marker_7_tf_broadcaster" args="0.868 -0.2265 -0.3195 0 0 0 marker_9 marker7" /> TL
+  <node pkg="tf2_ros" type="static_transform_publisher" name="marker10_to_marker_7_tf_broadcaster" args="0.868 0.6269 -0.3375 0 0 0 marker_10 marker7" /> TR
+  <node pkg="tf2_ros" type="static_transform_publisher" name="marker11_to_marker_7_tf_broadcaster" args="0.868 -0.2305 0.383 0 0 0 marker_11 marker7" /> BL -->
+  <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_marker_4_tf_broadcaster" args="0 0 0 0 1.571 -1.571 marker_4 marker7" /> BL -->
 
   <param name="robot_description" command="$(find xacro)/xacro $(arg robot_description_xacro)"/>
   <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" />
