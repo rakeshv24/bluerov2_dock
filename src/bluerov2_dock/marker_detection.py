@@ -21,6 +21,8 @@ from geometry_msgs.msg import PoseStamped
 from bluerov2_dock.msg import marker_pose, marker_detect
 from bluerov2_dock.srv import detection
 from scipy.spatial.transform import Rotation as R
+from collections import deque
+
 # import sys
 # sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/bluerov2_dock')
 
@@ -52,14 +54,23 @@ ARUCO_DICT = {
 
 class Aruco():
     def __init__(self):
-        # self.desired_markers = [2, 7, 8, 9, 10, 11]
-        self.desired_markers = [1, 4]
+        self.desired_markers = [2, 7, 8, 9, 10, 11]
+        # self.desired_markers = [1, 4]
+        
+        '''
+        7: Inside Left
+        8: Inside Right
+        2: Bottom Right
+        9: Top Left
+        10: Top Right
+        11: Bottom Left
+        '''
 
         self.marker_size = {1: 0.20,
                             2: 0.10,
                             4: 0.15,
                             7: 0.05,
-                            8: 0.10,
+                            8: 0.10, 
                             9: 0.10,
                             10: 0.10,
                             11: 0.10}
@@ -73,6 +84,9 @@ class Aruco():
 
         self.service_flag = False
         self.bridge = CvBridge()
+        
+        self.filter_len = 20
+        self.pose_buffer = deque(maxlen=self.filter_len)
 
         # Default marker dictionary
         self.selected_dict = ARUCO_DICT["DICT_6X6_50"]
@@ -177,7 +191,7 @@ class Aruco():
             for i, j in enumerate(ids):
                 # If the detected marker is not one of the desired markers, then ignore
                 if j[0] in self.desired_markers:
-                    detected_marker_ids.append(j)
+                    detected_marker_ids.append(j[0])
                     des_marker_corners.append(corners[i])
 
             detected_marker_ids = np.array(detected_marker_ids)
@@ -185,9 +199,16 @@ class Aruco():
 
             cv2.aruco.drawDetectedMarkers(frame, des_marker_corners, detected_marker_ids)
 
+            # if detected_marker_ids.shape[0] > 0:
+            #     print(detected_marker_ids.shape)
+            #     print(des_marker_corners.shape)
+            #     print("Desired markers are present")
+        
             # Marker Pose Estimation
-            for i in range(des_marker_corners.shape[0]):
-                marker_id = detected_marker_ids[i][0]
+            i = 0
+            if detected_marker_ids.shape[0] > 0:
+            # for i in range(des_marker_corners.shape[0]):
+                marker_id = detected_marker_ids[i]
                 marker_id_str = "marker_{0}".format(marker_id)
                 marker_size = self.marker_size[marker_id]
                 # print(i)
@@ -245,6 +266,50 @@ class Aruco():
                 rov_pose.pose.orientation.y = tf_base_to_map.transform.rotation.y
                 rov_pose.pose.orientation.z = tf_base_to_map.transform.rotation.z
                 rov_pose.pose.orientation.w = tf_base_to_map.transform.rotation.w
+                
+                rov_orientation = R.from_quat([
+                    rov_pose.pose.orientation.x,
+                    rov_pose.pose.orientation.y,
+                    rov_pose.pose.orientation.z,
+                    rov_pose.pose.orientation.w,
+                    ]).as_euler("xyz")
+                
+                rov_pose_arr = np.array([
+                    rov_pose.pose.position.x,
+                    rov_pose.pose.position.y,
+                    rov_pose.pose.position.z,
+                    rov_orientation
+                ])
+                
+                self.pose_buffer.append(rov_pose_arr)
+                
+                if len(self.pose_buffer) < self.pose_buffer.maxlen:
+                    return
+                
+                def moving_average(data):
+                    data = np.array(data)
+                    weights = np.arange(len(data)) + 1
+
+                    # Apply the LWMA filter and return
+                    return np.array(
+                        [
+                            np.sum(np.prod(np.vstack((axis, weights)), axis=0))
+                            / np.sum(weights)
+                            for axis in data.T
+                        ]
+                    )
+                
+                filtered_pose = moving_average(self.pose_buffer)
+                
+                rov_pose.pose.position.x = filtered_pose[0]
+                rov_pose.pose.position.y = filtered_pose[1]
+                rov_pose.pose.position.z = filtered_pose[2]
+                
+                quat = R.from_euler("xyz", filtered_pose[3:][0]).as_quat()
+                rov_pose.pose.orientation.x = quat[0]
+                rov_pose.pose.orientation.y = quat[1]
+                rov_pose.pose.orientation.z = quat[2]
+                rov_pose.pose.orientation.w = quat[3]
                 
                 # rospy.loginfo("[Aruco][marker_detection] ROV Pose: {0}".format(rov_pose))
 
