@@ -36,6 +36,7 @@ class MPControl():
         self.auv = AUV.load_params(auv_yaml)
         self.mpc = MPC.load_params(auv_yaml, mpc_yaml)
         
+        self.thrusters = self.mpc.thrusters        
         self.comp_time = 0.
         self.time_id = 0
         self.dt = self.mpc.dt
@@ -62,11 +63,10 @@ class MPControl():
         self.yaw_diff = abs((((x0[5, :] - xr[5, :]) + np.pi) % (2*np.pi)) - np.pi)[0]
 
         if self.distance < self.tolerance and self.yaw_diff < self.yaw_tolerance:
-            # return np.zeros((8,1)), np.zeros((8,1)), True
-            return np.zeros((8,1)), True
+            return np.zeros((self.thrusters, 1)), True
         
         else:    
-            u, inst_cost = self.mpc.run_mpc(x0, xr)
+            u, force_axes = self.mpc.run_mpc(x0, xr)
             
             # x_dot = self.auv.compute_nonlinear_dynamics(x0, u, complete_model=True)
             
@@ -85,6 +85,8 @@ class MPControl():
             print(f"Computation Time = {round(self.comp_time,3)}s")
             print("----------------------------------------------")
             print(f"MPC Contol Input: {np.round(u, 2).T}")
+            print("----------------------------------------------")
+            print(f"Axes Forces: {np.round(force_axes, 2).T}")
             print("----------------------------------------------")
             print(f"Initial Vehicle Pose: {np.round(x0[0:6], 3).T}")
             print(f"Initial Vehicle Velocity: {np.round(x0[6:12], 3).T}")

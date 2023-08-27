@@ -1,6 +1,6 @@
 import yaml
 import numpy as np
-from casadi import DM, SX, Function, integrator, Opti, evalf, mtimes, vertcat, exp
+from casadi import DM, SX, Function, integrator, Opti, evalf, mtimes, vertcat, exp, pinv
 import sys
 
 sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/bluerov2_dock')
@@ -150,14 +150,15 @@ class MPC(object):
         opt.solver('ipopt', options)
         sol = opt.solve()
         
-        u_next = sol.value(U)[:,0:1]
+        force_axes = sol.value(U)[:,0:1]
         # x_next = sol.value(X)[:,1:2]
 
         self.previous_control = sol.value(U)
         self.previous_state = sol.value(X)
-        inst_cost = sol.value(cost)
         
-        # normalized_force = mtimes(self.auv.tam, u_next)
+        u_next = evalf(mtimes(pinv(self.auv.tcm), force_axes)).full()
+        
+        # force_axes = evalf(mtimes(self.auv.tcm, u_next)).full()
         # thrust_force = mtimes(self.auv.tam, u_next)
         # thrust_force = (80.0 / (1 + exp(-4 * (normalized_force ** 3)))) - 40.0
         # total_force = evalf(mtimes(self.auv.tcm, thrust_force)).full()
@@ -165,5 +166,5 @@ class MPC(object):
         
         # thrust_force = evalf(mtimes(self.auv.tam, u_next)).full()
 
-        return u_next, inst_cost
+        return u_next, force_axes
         
