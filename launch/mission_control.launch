@@ -48,7 +48,8 @@
   <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_base_footprint" args="0 0 0 0 0 0 base_link base_footprint" /> -->
   <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_marker1_tf_broadcaster" args="1 0 0 0 0 0 map marker_1" /> -->
   <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="marker1_to_map_tf_broadcaster" args="0 0 0 0 1.571 -1.571 marker_1 map" /> -->
-  <node pkg="tf2_ros" type="static_transform_publisher" name="marker7_to_map_tf_broadcaster" args="0.1869 0.021 0.434 0 1.571 -1.571 marker_7 map" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="marker7_to_map_tf_broadcaster" args="0.225 0.021 0.434 0 1.571 -1.571 marker_7 map" />
+  <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="marker7_to_map_tf_broadcaster" args="0.1869 0.021 0.434 0 1.571 -1.571 marker_7 map" /> -->
   
   <node pkg="tf2_ros" type="static_transform_publisher" name="marker8_to_marker7_tf_broadcaster" args="-0.3019 -0.036 0 0 0 0 marker_8 marker_7" />
   

@@ -26,6 +26,7 @@ class AUV(object):
         self.neutral_bouy = vehicle_dynamics["neutral_bouy"]
         self.curr_timestep = 0.0
         self.ocean_current_data = []
+        self.nu_w = np.zeros((6, 1))
         
         # Precompute the total mass matrix (w/added mass) inverted for future dynamic calls
         self.mass_inv = inv(self.rb_mass + self.added_mass)
@@ -151,7 +152,9 @@ class AUV(object):
                 # 0.0)
         return restorive_force
     
-    def compute_wave_force(self, x, nu_w, nu_w_dot):
+    def compute_wave_force(self):
+        nu_w = self.nu_w[0:3, :]
+        nu_w_dot = self.nu_w[3:6, :]
         wave_force = SX.zeros((6,1))
         wave_force[0, 0] = self.added_mass[0, 0] * nu_w_dot[0, 0] + (self.lin_damp[0, 0] + (self.quad_damp[0, 0] * fabs(nu_w[0, 0]))) * nu_w[0, 0]
         wave_force[2, 0] = self.added_mass[2, 2] * nu_w_dot[2, 0] + (self.lin_damp[2, 2] + (self.quad_damp[2, 2] * fabs(nu_w[2, 0]))) * nu_w[2, 0]
@@ -207,7 +210,8 @@ class AUV(object):
         coriolis_force_rb = self.compute_C_RB_force(nu)
         coriolis_force_added = self.compute_C_A_force(nu_r)
         coriolis_force_RB_A = self.compute_C_RB_force(nu_r) + self.compute_C_A_force(nu_r)
-        # wave_force = self.compute_wave_force(eta_B, nu_w_B, nu_w_dot_B)
+        wave_force = self.compute_wave_force()
+        # wave_force = self.compute_wave_force(nu_w_B, nu_w_dot_B)
             
         # Full Body Dynamics
         # nu_r_dot = mtimes(self.mass_inv, (thruster_force - mtimes(self.rb_mass, nu_c_dot) - mtimes(coriolis_force_rb, nu) - mtimes(coriolis_force_added, nu_r) - mtimes(damping_force, nu_r) - restorive_force))
@@ -215,15 +219,15 @@ class AUV(object):
         # Simplified Dynamics
         # nu_r_dot = mtimes(self.mass_inv, (thruster_force - mtimes((coriolis_force_rel + damping_force), nu_r) - restorive_force))
         
-        nu_r_dot = if_else(complete_model,
-                           mtimes(self.mass_inv, (thruster_force - mtimes(self.rb_mass, nu_c_dot) - mtimes(coriolis_force_rb, nu) - mtimes(coriolis_force_added, nu_r) - mtimes(damping_force, nu_r) - restorive_force)),
-                           mtimes(self.mass_inv, (thruster_force - mtimes(coriolis_force_RB_A, nu_r) - mtimes(damping_force, nu_r) - restorive_force))
-                           )        
-        
         # nu_r_dot = if_else(complete_model,
-        #                    mtimes(self.mass_inv, (thruster_force + wave_force - mtimes(self.rb_mass, nu_c_dot) - mtimes(coriolis_force_rb, nu) - mtimes(coriolis_force_added, nu_r) - mtimes(damping_force, nu_r) - restorive_force)),
-        #                    mtimes(self.mass_inv, (thruster_force + wave_force - mtimes(coriolis_force_RB_A, nu_r) - mtimes(damping_force, nu_r) - restorive_force))
-        #                    )
+        #                    mtimes(self.mass_inv, (thruster_force - mtimes(self.rb_mass, nu_c_dot) - mtimes(coriolis_force_rb, nu) - mtimes(coriolis_force_added, nu_r) - mtimes(damping_force, nu_r) - restorive_force)),
+        #                    mtimes(self.mass_inv, (thruster_force - mtimes(coriolis_force_RB_A, nu_r) - mtimes(damping_force, nu_r) - restorive_force))
+        #                    )        
+        
+        nu_r_dot = if_else(complete_model,
+                           mtimes(self.mass_inv, (thruster_force + wave_force - mtimes(self.rb_mass, nu_c_dot) - mtimes(coriolis_force_rb, nu) - mtimes(coriolis_force_added, nu_r) - mtimes(damping_force, nu_r) - restorive_force)),
+                           mtimes(self.mass_inv, (thruster_force + wave_force - mtimes(coriolis_force_RB_A, nu_r) - mtimes(damping_force, nu_r) - restorive_force))
+                           )
         
         # nu_dot = mtimes(self.mass_inv, (thruster_force + mtimes(self.added_mass, nu_c_dot) - mtimes(coriolis_force_rb, nu) - mtimes(coriolis_force_added, nu_r) - mtimes(damping_force, nu_r) - restorive_force))
         # nu_dot = nu_c_dot + nu_r_dot

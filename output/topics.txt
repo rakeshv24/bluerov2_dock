@@ -32,3 +32,5 @@
 /bluerov2_dock/mpc
 /bluerov2_dock/mpc_pwm
 /bluerov2_dock/vision_pose/pose
+/bluerov2_dock/mpc_wrench
+/bluerov2_dock/rov_odom
