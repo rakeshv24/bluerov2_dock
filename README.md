@@ -96,5 +96,6 @@ This repository is a modified version of the [bluerov_ros_playground](https://gi
 - Before proceeding further, make sure that all the steps mentioned in the guide for [Software Setup](https://bluerobotics.com/learn/bluerov2-software-setup
 ) has been followed.
 - From a terminal, run `roslaunch bluerov2_dock mission_control.launch`
-   - If the terminal initially outputs *Controller error:'joy'*, move the sticks to clear the error
-- To enable fiducial tracking, open another terminal and run `rosservice call \bluerov2_dock\control_detection "det_flag: true"`.
+   - If the terminal initially outputs *Controller error:'joy'*, move the sticks to clear the error.
+   - Press button "A" on the joystick to enable autonomous docking mode.
+      - To switch back to manual mode, move either of the sticks in any direction.
