@@ -58,21 +58,18 @@ catkin_python_setup()
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
-add_message_files(
-  FILES
-  marker_detect.msg
-  marker_pose.msg
+# add_message_files(
+#   FILES
 #   Message1.msg
 #   Message2.msg
-)
+# )
 
 ## Generate services in the 'srv' folder
-add_service_files(
-  FILES
-  detection.srv
+# add_service_files(
+#   FILES
 #   Service1.srv
 #   Service2.srv
-)
+# )
 
 ## Generate actions in the 'action' folder
 # add_action_files(
@@ -82,14 +79,14 @@ add_service_files(
 # )
 
 ## Generate added messages and services with any dependencies listed here
-generate_messages(
-   DEPENDENCIES
-   std_msgs
-   geometry_msgs
-   sensor_msgs
-   nav_msgs
-   mavros_msgs
- )
+# generate_messages(
+#    DEPENDENCIES
+#    std_msgs
+#    geometry_msgs
+#    sensor_msgs
+#    nav_msgs
+#    mavros_msgs
+#  )
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -180,10 +177,13 @@ ${catkin_INCLUDE_DIRS}
 catkin_install_python(PROGRAMS
   src/bluerov2_dock/mission_control.py
   src/bluerov2_dock/pwm_publish_node.py
+  src/bluerov2_dock/video.py
+  src/bluerov2_dock/manager.py
   src/bluerov2_dock/auto_dock.py
-  src/bluerov2_dock/mpc_hinsdale.py
+  src/bluerov2_dock/mpc_casadi.py
+  src/bluerov2_dock/mpc_acados.py
   src/bluerov2_dock/auv_hinsdale.py
-  src/bluerov2_dock/aruco_marker_detection.py
+  src/bluerov2_dock/marker_detection.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

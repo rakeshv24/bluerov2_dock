@@ -6,25 +6,24 @@ import rospy
 
 # sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/bluerov2_dock')
 
-from casadi import evalf
 from auv_hinsdale import AUV
-# from mpc_hinsdale import MPC
+# from mpc_casadi import MPC
 from mpc_acados import MPC
 
 
 class MPControl():
     def __init__(self):
         cwd = os.path.dirname(__file__)
-            
+
         # auv_yaml = cwd + "/../../config/auv_bluerov2.yaml"
         # mpc_yaml = cwd + "/../../config/mpc_bluerov2.yaml"
-                    
+
         auv_yaml = cwd + "/../../config/auv_bluerov2_heavy.yaml"
         mpc_yaml = cwd + "/../../config/mpc_bluerov2_heavy.yaml"
-        
+
         # auv_yaml = os.path.join("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/config/auv_bluerov2.yaml")
         # mpc_yaml = os.path.join("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/config/mpc_bluerov2.yaml")
-        
+
         # auv_yaml = os.path.join("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/config/auv_bluerov2_heavy.yaml")
         # mpc_yaml = os.path.join("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/config/mpc_bluerov2_heavy.yaml")
 
@@ -33,18 +32,18 @@ class MPControl():
         self.yaw_tolerance = 0.05
         self.path_length = 0.0
         self.p_times = [0]
-        
+
         self.auv = AUV.load_params(auv_yaml)
         self.mpc = MPC.load_params(auv_yaml, mpc_yaml)
-        
-        self.thrusters = self.mpc.thrusters        
+
+        self.thrusters = self.mpc.thrusters
         self.comp_time = 0.
         self.time_id = 0
         self.dt = self.mpc.dt
         self.t_f = 3600.0
         self.t_span = np.arange(0.0, self.t_f, self.dt)
         self.mpc.reset()
-        
+
         self.wave_height = 0.2
         self.wave_T = 2.5
         self.water_depth = 1.136
@@ -55,9 +54,9 @@ class MPControl():
         self.wave_lambda = 2 * np.pi / self.wave_number
         self.wave_phase = 0
         self.wavemaker_offset = [16.763, 0.0, 0.568]
-        
+
         self.opt_data = {}
-        
+
     def compute_wave_number(self, g, h, T):
         k = 1  # Initial guess for wave number
         iter_tol = 0.0000001  # Iteration tolerance
@@ -69,15 +68,15 @@ class MPControl():
             k_new = k - res / dev_res
             err = abs(k_new - k) / k
             k = k_new
-        
+
         return k
-                    
+
     def wrap_pi2negpi(self, angle):
         return ((angle + np.pi) % (2 * np.pi)) - np.pi
-    
+
     def wrap_zeroto2pi(self, angle):
         return angle % (2 * np.pi)
-    
+
     def compute_wave_particle_vel(self, eta, t):
         x = -eta[0][0] + self.wavemaker_offset[0]
         z = -eta[2][0] - self.wavemaker_offset[2]
@@ -91,51 +90,40 @@ class MPControl():
         omega = self.wave_freq
         L = self.wave_lambda
         # L = (g * T**2 / 2 * np.pi) * ((np.tanh(omega**2 * d / g)**(3/4)))**(2/3)
-        
-        u = (g * H * np.cosh(k * (z + d)) * np.cos(k*x - omega*t + phase)) / (2 * c * np.cosh(k * d))
-        w = (g * H * np.sinh(k * (z + d)) * np.sin(k*x - omega*t + phase)) / (2 * c * np.cosh(k * d))
-        u_dot = (g * H * np.pi * np.cosh(k * (z + d)) * np.sin(k*x - omega*t + phase)) / (L * np.cosh(k *d))
-        w_dot = -(g * H * np.pi * np.sinh(k * (z + d)) * np.cos(k*x - omega*t + phase)) / (L * np.cosh(k *d))
-        
-        nu_w = np.zeros((6,1))
+
+        u = (g * H * np.cosh(k * (z + d)) * np.cos(k * x - omega * t + phase)) / (2 * c * np.cosh(k * d))
+        w = (g * H * np.sinh(k * (z + d)) * np.sin(k * x - omega * t + phase)) / (2 * c * np.cosh(k * d))
+        u_dot = (g * H * np.pi * np.cosh(k * (z + d)) * np.sin(k * x - omega * t + phase)) / (L * np.cosh(k * d))
+        w_dot = -(g * H * np.pi * np.sinh(k * (z + d)) * np.cos(k * x - omega * t + phase)) / (L * np.cosh(k * d))
+
+        nu_w = np.zeros((6, 1))
         nu_w[0][0] = -u
         nu_w[2][0] = -w
         nu_w[3][0] = -u_dot
         nu_w[5][0] = -w_dot
         return nu_w
-    
+
     def run_mpc(self, x0, xr):
         process_t0 = time.perf_counter()
         self.distance = np.linalg.norm(x0[0:3, :] - xr[0:3, :])
-        
+
         x0[3:6, :] = self.wrap_pi2negpi(x0[3:6, :])
         # xr[5, :] += np.pi
         xr[3:6, :] = self.wrap_pi2negpi(xr[3:6, :])
-        
-        self.yaw_diff = abs((((x0[5, :] - xr[5, :]) + np.pi) % (2*np.pi)) - np.pi)[0]
+
+        self.yaw_diff = abs((((x0[5, :] - xr[5, :]) + np.pi) % (2 * np.pi)) - np.pi)[0]
 
         if self.distance < self.tolerance and self.yaw_diff < self.yaw_tolerance:
             return np.zeros((8, 1)), np.zeros((6, 1)), True
-        
+
         else:
             nu_w = self.compute_wave_particle_vel(x0[0:6, :], self.t_span[self.time_id])
             rospy.logwarn(f"Wave Info: {nu_w}")
-            self.auv.nu_w = nu_w    
+            self.auv.nu_w = nu_w
             u, wrench = self.mpc.run_mpc(x0, xr)
-            
-            # x_dot = self.auv.compute_nonlinear_dynamics(x0, u, complete_model=True)
-            
-            # x_dot = np.array(evalf(x_dot))
 
-            # x_sim = x0 + x_dot[0:12, :] * self.dt
-            # x_sim[3:6, :] = self.wrap_pi2negpi(x_sim[3:6, :])
-            
-            # self.path_length += np.linalg.norm(x_sim[0:3, 0] - x0[0:3, 0])
-            # self.distance = np.linalg.norm(x_sim[0:3, :] - xr[0:3, :])
-            # self.yaw_diff = abs((((x_sim[5, :] - xr[5, :]) + np.pi) % (2*np.pi)) - np.pi)[0]
-            
             self.comp_time = time.perf_counter() - process_t0
-            
+
             print(f"T = {round(self.t_span[self.time_id],3)}s, Time Index = {self.time_id}")
             print(f"Computation Time = {round(self.comp_time,3)}s")
             print("----------------------------------------------")
@@ -157,12 +145,9 @@ class MPControl():
             print(f"(Dock-AUV) Yaw difference: {np.round(self.yaw_diff, 3)}")
             print("----------------------------------------------")
             # print("")
-            
-            # x_sim[11, :] = np.round(x_sim[11, :], 2)
-            
+
             self.time_id += 1
-                    
-            # return u, x_sim, False
+
             return u, wrench, False
 
 
