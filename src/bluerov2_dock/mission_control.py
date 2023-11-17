@@ -74,7 +74,6 @@ class BlueROV2():
         self.fid_pose_sub_time = None
         self.rov_pose = None
         self.rov_twist = None
-        self.rov_odom = None
         
         self.image_idx = 0
         self.light_level = 1500
@@ -119,7 +118,7 @@ class BlueROV2():
         self.state_subs = rospy.Subscriber('/mavros/state', State, self.store_sub_data, "state")
         self.pressure_sub = rospy.Subscriber('/mavros/imu/static_pressure', FluidPressure, self.pressure_cb)
         self.rov_pose_sub = rospy.Subscriber('/bluerov2_dock/vision_pose/pose', PoseStamped, self.rov_pose_cb)
-        self.rov_vel_sub = rospy.Subscriber('/mavros/local_position/velocity_body', TwistStamped, self.rov_vel_cb)
+        # self.rov_vel_sub = rospy.Subscriber('/mavros/local_position/velocity_body', TwistStamped, self.rov_vel_cb)
 
     def initialize_publishers(self):
         # Set up publishers
@@ -359,11 +358,11 @@ class BlueROV2():
             return
 
         # if self.rov_pose is None or self.rov_twist is None:
-        if self.rov_pose is None:
+        if self.rov_odom is None:
             rospy.logerr_throttle(10, "[BlueROV2][auto_contol] ROV odom not initialized")
             return
         else:
-            self.rov_odom = np.vstack((self.rov_pose, self.rov_twist))
+            # self.rov_odom = np.vstack((self.rov_pose, self.rov_twist))
             x0 = self.rov_odom
 
         # x0 = np.array([[0., 0., 0., 0., 0., 0, 0., 0., 0., 0., 0., 0.]]).T
