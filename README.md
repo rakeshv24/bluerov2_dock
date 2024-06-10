@@ -1,11 +1,13 @@
 # bluerov2_dock
 
-This package was developed to control a BlueROV2 to perform autonomous underwater docking. This package utilizes Model Predictive Control (MPC) to achieve optimal control of the vehicle. 
+This package was developed to control a BlueROV2 to perform autonomous underwater docking. This package utilizes Model Predictive Control (MPC) to achieve optimal control of the vehicle.
 
 This repository is a modified version of the [bluerov_ros_playground](https://github.com/patrickelectric/bluerov_ros_playground) repo authored by [patrickelectric](https://github.com/patrickelectric).
 
 ## Getting Started
+
 ### Requirements
+
 - [Python](https://www.python.org/downloads/) 3.6 or newer
   - [Numpy](https://pypi.org/project/numpy/)
   - [OpenCV](https://pypi.org/project/opencv-python/)
@@ -20,9 +22,10 @@ This repository is a modified version of the [bluerov_ros_playground](https://gi
 - [imutils](https://github.com/PyImageSearch/imutils)
 - [MAVROS](http://wiki.ros.org/mavros)
 
-
 ### Installation
+
 #### Installing ROS: *Ubuntu 20.04* (See [ROS wiki](http://wiki.ros.org/ROS/Installation) for other OS)
+
 1. Set up sources.list
    - `sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list'`
 2. Set up keys
@@ -36,7 +39,7 @@ This repository is a modified version of the [bluerov_ros_playground](https://gi
       - Desktop-Full (includes Desktop and 2D/3D simulators)
          - `sudo apt install ros-noetic-desktop-full`
 4. Set up environment
-   - You must source this script in every bash terminal you use ROS in 
+   - You must source this script in every bash terminal you use ROS in
       - `source /opt/ros/noetic/setup.bash`
    - To automatically source this script every time a new shell is launched, run
       - `echo "source /opt/ros/noetic/setup.bash" >> ~/.bashrc`
@@ -50,6 +53,7 @@ This repository is a modified version of the [bluerov_ros_playground](https://gi
    - `rosdep update`
 
 #### Building a Catkin Workspace
+
 1. Create and build workspace
    - `mkdir -p ~/catkin_ws/src`
    - `cd ~/catkin_ws/`
@@ -66,25 +70,41 @@ This repository is a modified version of the [bluerov_ros_playground](https://gi
    /home/youruser/catkin_ws/src:/opt/ros/noetic/share
 
 #### Installing CasADi
+
 `pip install casadi`
+
 #### Installing acados
+
 Please follow the instructions provided in the following two links:
+
 - [Source Installation](https://docs.acados.org/installation/index.html)
 - [Python Interface](https://docs.acados.org/python_interface/)
+
 #### Installing MAVROS
+
 `sudo apt-get install ros-noetic-mavros ros-noetic-mavros-extras`
+
 #### Installing Geographlib
+
 `sudo /opt/ros/noetic/lib/mavros/install_geographiclib_datasets.sh`
+
 #### Installing imutils
+
 `pip install imutils`
+
 #### Installing Pandas
+
 `pip install pandas`
+
 #### Installing OpenCV
+
 1. Make sure python-opencv is not installed
    - `pip uninstall opencv-python`
 2. Install opencv-contrib-python
    - `pip install opencv-contrib-python`
+
 #### Cloning Project
+
  1. Go to your ROS package source directory:
     - `cd catkin_ws/src`
  2. Clone this project
@@ -97,9 +117,10 @@ Please follow the instructions provided in the following two links:
     - `source devel/setup.sh`
 
 ## Usage
+
 - Before proceeding further, make sure that all the steps mentioned in the guide for [Software Setup](https://bluerobotics.com/learn/bluerov2-software-setup
 ) has been followed.
 - From a terminal, run `roslaunch bluerov2_dock mission_control.launch`
-   - If the terminal initially outputs *Controller error:'joy'*, move the sticks to clear the error.
-   - Press button "A" on the joystick to enable autonomous docking mode.
-      - To switch back to manual mode, move either of the sticks in any direction.
+  - If the terminal initially outputs *Controller error:'joy'*, move the sticks to clear the error.
+  - Press button "A" on the joystick to enable autonomous docking mode.
+    - To switch back to manual mode, move either of the sticks in any direction.
