@@ -10,7 +10,9 @@ import sys
 import pandas as pd
 import os
 
-sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/bluerov2_dock')
+sys.path.insert(
+    0, "/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/bluerov2_dock"
+)
 
 try:
     import video
@@ -34,10 +36,10 @@ from mavros_msgs.srv import CommandBool
 from std_srvs.srv import SetBool
 
 
-class BlueROV2():
+class BlueROV2:
     def __init__(self) -> None:
         # Set flag for manual or auto mode
-        self.mode_flag = 'manual'
+        self.mode_flag = "manual"
 
         # Set boolean to note when to send a blank button
         # (needed to get lights to turn on/off)
@@ -74,7 +76,7 @@ class BlueROV2():
         self.fid_pose_sub_time = None
         self.rov_pose = None
         self.rov_twist = None
-        
+
         self.image_idx = 0
         self.light_level = 1500
         self.rc_passthrough_flag = False
@@ -92,19 +94,26 @@ class BlueROV2():
         # self.initialize_timers()
 
     def load_pwm_lookup(self):
+        """Load the lookup table for converting thrust to pwm values"""
         cwd = os.path.dirname(__file__)
         # csv = pd.read_csv("/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/data/T200_data_16V.csv")
         csv = pd.read_csv(cwd + "/../../data/T200_data_16V.csv")
 
-        thrust_vals = csv['Force'].tolist()
+        thrust_vals = csv["Force"].tolist()
         neg_thrust = [i for i in thrust_vals if i < 0]
         pos_thrust = [i for i in thrust_vals if i > 0]
         zero_thrust = [i for i in thrust_vals if i == 0]
 
-        pwm_vals = csv['PWM'].tolist()
+        pwm_vals = csv["PWM"].tolist()
         neg_t_pwm = [pwm_vals[i] for i in range(len(neg_thrust))]
-        zero_t_pwm = [pwm_vals[i] for i in range(len(neg_thrust), len(neg_thrust) + len(zero_thrust))]
-        pos_t_pwm = [pwm_vals[i] for i in range(len(neg_thrust) + len(zero_thrust), len(thrust_vals))]
+        zero_t_pwm = [
+            pwm_vals[i]
+            for i in range(len(neg_thrust), len(neg_thrust) + len(zero_thrust))
+        ]
+        pos_t_pwm = [
+            pwm_vals[i]
+            for i in range(len(neg_thrust) + len(zero_thrust), len(thrust_vals))
+        ]
 
         self.neg_thrusts = np.array(neg_thrust)
         self.pos_thrusts = np.array(pos_thrust)
@@ -113,44 +122,79 @@ class BlueROV2():
 
     def initialize_subscribers(self):
         # Set up subscribers
-        self.joy_sub = rospy.Subscriber('/joy', Joy, self.store_sub_data, "joy")
-        self.battery_sub = rospy.Subscriber('/mavros/battery', BatteryState, self.store_sub_data, "battery")
-        self.state_subs = rospy.Subscriber('/mavros/state', State, self.store_sub_data, "state")
-        self.pressure_sub = rospy.Subscriber('/mavros/imu/static_pressure', FluidPressure, self.pressure_cb)
-        self.rov_pose_sub = rospy.Subscriber('/bluerov2_dock/vision_pose/pose', PoseStamped, self.rov_pose_cb)
+        self.joy_sub = rospy.Subscriber("/joy", Joy, self.store_sub_data, "joy")
+        self.battery_sub = rospy.Subscriber(
+            "/mavros/battery", BatteryState, self.store_sub_data, "battery"
+        )
+        self.state_subs = rospy.Subscriber(
+            "/mavros/state", State, self.store_sub_data, "state"
+        )
+        self.pressure_sub = rospy.Subscriber(
+            "/mavros/imu/static_pressure", FluidPressure, self.pressure_cb
+        )
+        self.rov_pose_sub = rospy.Subscriber(
+            "/bluerov2_dock/vision_pose/pose", PoseStamped, self.rov_pose_cb
+        )
         # self.rov_vel_sub = rospy.Subscriber('/mavros/local_position/velocity_body', TwistStamped, self.rov_vel_cb)
 
     def initialize_publishers(self):
         # Set up publishers
         # self.control_pub = rospy.Publisher('/mavros/rc/override', OverrideRCIn, queue_size=1)
-        self.control_pub = rospy.Publisher('/bluerov2_dock/pwm', OverrideRCIn, queue_size=1)
-        self.mpc_pwm_pub = rospy.Publisher('/bluerov2_dock/mpc_pwm', OverrideRCIn, queue_size=1)
-        self.mpc_output = rospy.Publisher('/bluerov2_dock/mpc', Float32MultiArray, queue_size=1)
-        self.rov_odom_pub = rospy.Publisher('/bluerov2_dock/rov_odom', Odometry, queue_size=1)
-        self.mpc_wrench_pub = rospy.Publisher('/bluerov2_dock/mpc_wrench', WrenchStamped, queue_size=1)
+        self.control_pub = rospy.Publisher(
+            "/bluerov2_dock/pwm", OverrideRCIn, queue_size=1
+        )
+        self.mpc_pwm_pub = rospy.Publisher(
+            "/bluerov2_dock/mpc_pwm", OverrideRCIn, queue_size=1
+        )
+        self.mpc_output = rospy.Publisher(
+            "/bluerov2_dock/mpc", Float32MultiArray, queue_size=1
+        )
+        self.rov_odom_pub = rospy.Publisher(
+            "/bluerov2_dock/rov_odom", Odometry, queue_size=1
+        )
+        self.mpc_wrench_pub = rospy.Publisher(
+            "/bluerov2_dock/mpc_wrench", WrenchStamped, queue_size=1
+        )
 
     def initialize_services(self):
         # Initialize arm/disarm service
-        self.arm_srv = rospy.ServiceProxy('/mavros/cmd/arming', CommandBool)
+        self.arm_srv = rospy.ServiceProxy("/mavros/cmd/arming", CommandBool)
         # Enable/Disable RC Passthrough Mode
-        self.rc_passthrough_srv = rospy.ServiceProxy("/blue/cmd/enable_passthrough", SetBool)
+        self.rc_passthrough_srv = rospy.ServiceProxy(
+            "/blue/cmd/enable_passthrough", SetBool
+        )
 
     def initialize_timers(self):
+        """Initialize the timer for the control loop"""
         rospy.Timer(rospy.Duration(0.05), self.timer_cb)
 
     def wrap_pi2negpi(self, angle):
+        """Wrap angle to [-pi, pi]"""
         return ((angle + np.pi) % (2 * np.pi)) - np.pi
 
     def pressure_cb(self, data):
+        """Callback function for the pressure sensor
+
+        Args:
+            data: FluidPressure message
+        """
         try:
             pressure = data.fluid_pressure
             rho = 1000
             g = 9.8
             self.depth = pressure / (rho * g)
         except Exception as e:
-            rospy.logerr_throttle(10, "[BlueROV2][pressure_cb] Not receiving pressure readings")
+            rospy.logerr_throttle(
+                10, "[BlueROV2][pressure_cb] Not receiving pressure readings"
+            )
 
     def rov_pose_cb(self, pose):
+        """Callback function for the ROV's pose
+
+        Args:
+            pose: PoseStamped message
+        """
+
         # try:
         #     pose = self.tf_buffer.transform(data, "map_ned")
         # except TransformException as e:
@@ -196,7 +240,9 @@ class BlueROV2():
                 rov_odom.pose.pose.position.x = self.rov_odom[0][0]
                 rov_odom.pose.pose.position.y = self.rov_odom[1][0]
                 rov_odom.pose.pose.position.z = self.rov_odom[2][0]
-                quat = quaternion_from_euler(self.rov_odom[3][0], self.rov_odom[4][0], self.rov_odom[5][0])
+                quat = quaternion_from_euler(
+                    self.rov_odom[3][0], self.rov_odom[4][0], self.rov_odom[5][0]
+                )
                 rov_odom.pose.pose.orientation.x = quat[0]
                 rov_odom.pose.pose.orientation.y = quat[1]
                 rov_odom.pose.pose.orientation.z = quat[2]
@@ -211,9 +257,16 @@ class BlueROV2():
                 self.rov_odom_pub.publish(rov_odom)
             # print(self.rov_pose)
         except Exception as e:
-            rospy.logerr_throttle(10, "[BlueROV2][rov_pose_cb] Not receiving ROV's Position")
+            rospy.logerr_throttle(
+                10, "[BlueROV2][rov_pose_cb] Not receiving ROV's Position"
+            )
 
     def rov_vel_cb(self, vel):
+        """Callback function for the ROV's velocity
+
+        Args:
+            vel: TwistStamped message
+        """
         try:
             self.rov_twist = np.zeros((6, 1))
             self.rov_twist[0][0] = vel.twist.linear.x
@@ -227,15 +280,33 @@ class BlueROV2():
             # self.rov_twist[5][0] = 0.0
             # print(self.rov_twist)
         except Exception as e:
-            rospy.logerr_throttle(10, "[BlueROV2][rov_vel_cb] Not receiving ROV's velocity")
+            rospy.logerr_throttle(
+                10, "[BlueROV2][rov_vel_cb] Not receiving ROV's velocity"
+            )
 
     def store_sub_data(self, data, key):
+        """Store subscriber data in a dictionary
+
+        Args:
+            data: Subscriber data
+            key: Key to store the data
+        """
         try:
             self.sub_data_dict[key] = data
         except Exception as e:
-            rospy.logerr_throttle(10, "[BlueROV2][store_sub_data] Not receiving {} data".format(key))
+            rospy.logerr_throttle(
+                10, "[BlueROV2][store_sub_data] Not receiving {} data".format(key)
+            )
 
     def thrust_to_pwm(self, thrust):
+        """Convert thrust values to pwm values
+
+        Args:
+            thrust: Thrust values
+
+        Returns:
+            pwm: PWM values
+        """
         values = []
         thrust = thrust.flatten()
 
@@ -243,9 +314,6 @@ class BlueROV2():
             for i in range(8):
                 t = thrust[i] / 9.8
                 t = np.round(t, 3)
-                # print(t)
-
-                # p = 0.1427*t**5 - 0.0655*t**4 - 5.6083*t**3 - 0.6309*t**2 + 140.5964*t + 1491.3739
 
                 if t > 0.0:
                     p = np.interp(t, self.pos_thrusts, self.pos_pwm)
@@ -256,15 +324,13 @@ class BlueROV2():
 
                 values.append(round(p))
 
-            # pwm = [values[4], values[3], values[2], values[5], values[0], values[1]]
-            # pwm = [self.neutral_pwm, self.neutral_pwm, values[2], self.neutral_pwm, values[0], values[1]]
-            # pwm = [self.neutral_pwm, self.neutral_pwm, values[2], values[5], values[0], values[1]]
-            # pwm = [self.neutral_pwm, self.neutral_pwm, self.neutral_pwm, self.neutral_pwm, 1900, self.neutral_pwm]
             pwm = values
 
         except Exception as e:
             rospy.logerr_throttle(
-                10, "[BlueROV2][thrust_to_pwm] Error in thrust to pwm conversion. Setting neutral pwm")
+                10,
+                "[BlueROV2][thrust_to_pwm] Error in thrust to pwm conversion. Setting neutral pwm",
+            )
             pwm = [self.neutral_pwm for _ in range(8)]
 
         return pwm
@@ -285,7 +351,7 @@ class BlueROV2():
         p03 = -0.002098
         p04 = 0.00002251
 
-        pwm = p00 + p01 * force + p02 * force ** 2 + p03 * force ** 3 + p04 * force ** 4
+        pwm = p00 + p01 * force + p02 * force**2 + p03 * force**3 + p04 * force**4
 
         pwm = np.round(pwm)
         pwm = pwm.tolist()
@@ -294,7 +360,8 @@ class BlueROV2():
         return pwm
 
     def arm(self):
-        rospy.wait_for_service('/mavros/cmd/arming')
+        """Arm the vehicle"""
+        rospy.wait_for_service("/mavros/cmd/arming")
         self.arm_srv(True)
         rospy.loginfo("[BlueROV2][arm] Arming vehicle")
 
@@ -302,19 +369,25 @@ class BlueROV2():
         rospy.on_shutdown(self.disarm)
 
     def disarm(self):
+        """Disarm the vehicle"""
         rospy.loginfo("[BlueROV2][disarm] Disarming vehicle")
         self.arm_srv(False)
-        rospy.wait_for_service('/mavros/cmd/arming')
+        rospy.wait_for_service("/mavros/cmd/arming")
         self.arm_srv(False)
 
     def controller(self, joy):
+        """Controller function to switch between manual and autonomous mode
+
+        Args:
+            joy: Joy message
+        """
         axes = joy.axes
         buttons = joy.buttons
 
         # Switch into autonomous mode when button "A" is pressed
         # (Switches back into manual mode when the control sticks are moved)
         if buttons[0]:
-            self.mode_flag = 'auto'
+            self.mode_flag = "auto"
 
         # set arm and disarm (disarm default)
         if buttons[6] == 1:  # "back" joystick button
@@ -323,18 +396,22 @@ class BlueROV2():
             self.arm()
 
         # set autonomous or manual control (manual control default)
-        if self.mode_flag == 'auto':
+        if self.mode_flag == "auto":
             if not self.rc_passthrough_flag:
                 # Enable RC Passthrough Mode
                 response = self.rc_passthrough_srv(True)
                 if response.success:
                     self.rc_passthrough_flag = True
-                    rospy.logwarn_throttle(10, "[BlueROV2][controller] You are in AUTO mode!")
+                    rospy.logwarn_throttle(
+                        10, "[BlueROV2][controller] You are in AUTO mode!"
+                    )
                     self.auto_control(joy)
                 else:
                     rospy.logwarn_throttle(
-                        10, "[BlueROV2][controller] Unable to switch to RC Passthrough mode. Cannot enable AUTO mode!")
-                    self.mode_flag = 'manual'
+                        10,
+                        "[BlueROV2][controller] Unable to switch to RC Passthrough mode. Cannot enable AUTO mode!",
+                    )
+                    self.mode_flag = "manual"
             else:
                 self.auto_control(joy)
         else:
@@ -346,6 +423,11 @@ class BlueROV2():
             self.manual_control(joy)
 
     def auto_control(self, joy):
+        """Function to control the ROV autonomously
+
+        Args:
+            joy: Joy message
+        """
         # Switch out of autonomous mode if thumbstick input is detected
         # Grab the values of the control sticks
         axes = joy.axes
@@ -354,29 +436,34 @@ class BlueROV2():
         control_sticks = [abs(val) for val in control_sticks]
         if sum(control_sticks) > 0:
             # Set mode to manual
-            self.mode_flag = 'manual'
+            self.mode_flag = "manual"
             return
 
         # if self.rov_pose is None or self.rov_twist is None:
         if self.rov_odom is None:
-            rospy.logerr_throttle(10, "[BlueROV2][auto_contol] ROV odom not initialized")
+            rospy.logerr_throttle(
+                10, "[BlueROV2][auto_contol] ROV odom not initialized"
+            )
             return
         else:
             # self.rov_odom = np.vstack((self.rov_pose, self.rov_twist))
             x0 = self.rov_odom
 
         # x0 = np.array([[0., 0., 0., 0., 0., 0, 0., 0., 0., 0., 0., 0.]]).T
-        xr = np.array([[0., 0., 0., 0., 0., 0, 0., 0., 0., 0., 0., 0.]]).T
+        xr = np.array([[0.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]).T
 
         try:
             forces, wrench, converge_flag = self.mpc.run_mpc(x0, xr)
             if converge_flag:
-                rospy.loginfo_throttle(10, "[BlueROV2][auto_control] ROV reached dock successfully! Disarming now...")
+                rospy.loginfo_throttle(
+                    10,
+                    "[BlueROV2][auto_control] ROV reached dock successfully! Disarming now...",
+                )
                 response = self.rc_passthrough_srv(False)
                 self.rc_passthrough_flag = False
                 if response.success:
                     self.disarm()
-                self.mode_flag = 'manual'
+                self.mode_flag = "manual"
             else:
                 wrench_frd = WrenchStamped()
                 wrench_frd.header.frame_id = "base_link_frd"
@@ -410,15 +497,24 @@ class BlueROV2():
                     # pwm.append(self.neutral_pwm)
 
                 for i in range(len(pwm)):
-                    pwm[i] = max(min(pwm[i], self.max_possible_pwm), self.min_possible_pwm)
+                    pwm[i] = max(
+                        min(pwm[i], self.max_possible_pwm), self.min_possible_pwm
+                    )
 
                 self.mpc_pwm_pub.publish(pwm)
                 self.control_pub.publish(pwm)
         except Exception as e:
-            rospy.logerr_throttle(10, "[BlueROV2][auto_control] Error in MPC Computation" + str(e))
+            rospy.logerr_throttle(
+                10, "[BlueROV2][auto_control] Error in MPC Computation" + str(e)
+            )
             return
 
     def manual_control(self, joy):
+        """Function to control the ROV manually using a joystick
+
+        Args:
+            joy: Joy message
+        """
         axes = joy.axes
         buttons = joy.buttons
 
@@ -452,7 +548,9 @@ class BlueROV2():
 
         # Cap the pwm value (limits the ROV velocity)
         for i in range(len(override)):
-            override[i] = max(min(override[i], self.max_pwm_manual), self.min_pwm_manual)
+            override[i] = max(
+                min(override[i], self.max_pwm_manual), self.min_pwm_manual
+            )
 
         self.light_level = override[8]
 
@@ -461,27 +559,35 @@ class BlueROV2():
         self.control_pub.publish(override)
 
     def timer_cb(self, timer_event):
+        """Timer callback function to publish the control data at a fixed rate
+
+        Args:
+            timer_event: Timer event
+        """
         if self.override is not None:
             self.control_pub.publish(self.override)
 
     def run(self):
+        """Main function to run the controller"""
         rate = rospy.Rate(80)
 
         while not rospy.is_shutdown():
             # Try to get joystick axes and button data
             try:
-                joy = self.sub_data_dict['joy']
+                joy = self.sub_data_dict["joy"]
                 # Activate joystick control
                 self.controller(joy)
             except Exception as error:
-                rospy.logerr_throttle(10, '[BlueROV2][run] Controller error:' + str(error))
+                rospy.logerr_throttle(
+                    10, "[BlueROV2][run] Controller error:" + str(error)
+                )
 
             rate.sleep()
 
 
 if __name__ == "__main__":
     try:
-        rospy.init_node('mission_control', anonymous=True)
+        rospy.init_node("mission_control", anonymous=True)
     except KeyboardInterrupt:
         rospy.logwarn("Shutting down the node")
 

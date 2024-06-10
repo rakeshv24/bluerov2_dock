@@ -94,18 +94,21 @@ def generate_ray_casting_grid_map(ox, oy, xy_resolution):
     The breshen boolean tells if it's computed with bresenham ray casting
     (True) or with flood fill (False)
     """
-    min_x, min_y, max_x, max_y, x_w, y_w = calc_grid_map_config(
-        ox, oy, xy_resolution)
+    min_x, min_y, max_x, max_y, x_w, y_w = calc_grid_map_config(ox, oy, xy_resolution)
     # default 0.5 -- [[0.5 for i in range(y_w)] for i in range(x_w)]
-    
+
     occupancy_map = np.zeros((x_w, y_w))
     # occupancy_map = np.ones((x_w, y_w)) / 2
-    
-    center_x = int(np.floor(-min_x / xy_resolution))  # center x coordinate of the grid map
-    center_y = int(np.floor(-min_y / xy_resolution))  # center y coordinate of the grid map
-    
+
+    center_x = int(
+        np.floor(-min_x / xy_resolution)
+    )  # center x coordinate of the grid map
+    center_y = int(
+        np.floor(-min_y / xy_resolution)
+    )  # center y coordinate of the grid map
+
     # occupancy grid computed with bresenham ray casting
-    for (x, y) in tqdm(zip(ox, oy), total=len(ox)):
+    for x, y in tqdm(zip(ox, oy), total=len(ox)):
         # x coordinate of the the occupied area
         ix = int(np.floor((x - min_x) / xy_resolution))
         # y coordinate of the the occupied area
@@ -116,14 +119,14 @@ def generate_ray_casting_grid_map(ox, oy, xy_resolution):
         #     if laser_beam[0] < occupancy_map.shape[0] and laser_beam[1] < occupancy_map.shape[1]:
         #         if occupancy_map[laser_beam[0]][laser_beam[1]] != 1.0:
         #             occupancy_map[laser_beam[0]][laser_beam[1]] = 0.0  # free area 0.0
-            
-        if (ix < max_x):
+
+        if ix < max_x:
             occupancy_map[ix + 1][iy] = 1.0  # extend the occupied area
-        if (iy < max_y):
+        if iy < max_y:
             occupancy_map[ix][iy + 1] = 1.0  # extend the occupied area
-        if (ix < max_x and iy < max_y):
+        if ix < max_x and iy < max_y:
             occupancy_map[ix + 1][iy + 1] = 1.0  # extend the occupied area
-        
+
         occupancy_map[ix][iy] = 1.0  # occupied area 1.0
-        
+
     return occupancy_map, min_x, max_x, min_y, max_y, xy_resolution

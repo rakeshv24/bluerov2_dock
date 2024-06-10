@@ -21,10 +21,8 @@ from geometry_msgs.msg import PoseStamped
 from scipy.spatial.transform import Rotation as R
 from collections import deque
 
-# import sys
-# sys.path.insert(0, '/home/darth/workspace/bluerov2_ws/src/bluerov2_dock/src/bluerov2_dock')
 
-
+# Marker dictionary
 ARUCO_DICT = {
     "DICT_4X4_50": cv2.aruco.DICT_4X4_50,
     "DICT_4X4_100": cv2.aruco.DICT_4X4_100,
@@ -46,32 +44,35 @@ ARUCO_DICT = {
     "DICT_APRILTAG_16h5": cv2.aruco.DICT_APRILTAG_16h5,
     "DICT_APRILTAG_25h9": cv2.aruco.DICT_APRILTAG_25h9,
     "DICT_APRILTAG_36h10": cv2.aruco.DICT_APRILTAG_36h10,
-    "DICT_APRILTAG_36h11": cv2.aruco.DICT_APRILTAG_36h11
+    "DICT_APRILTAG_36h11": cv2.aruco.DICT_APRILTAG_36h11,
 }
 
 
-class Aruco():
+class Aruco:
     def __init__(self):
+        """This class is used to detect ArUco markers and estimate the pose of the ROV."""
         self.desired_markers = [2, 7, 8, 9, 10, 11]
         # self.desired_markers = [1, 4]
 
-        '''
+        """
         7: Inside Left
         8: Inside Right
         2: Bottom Right
         9: Top Left
         10: Top Right
         11: Bottom Left
-        '''
+        """
 
-        self.marker_size = {1: 0.20,
-                            2: 0.10,
-                            4: 0.15,
-                            7: 0.05,
-                            8: 0.10,
-                            9: 0.10,
-                            10: 0.10,
-                            11: 0.10}
+        self.marker_size = {
+            1: 0.20,
+            2: 0.10,
+            4: 0.15,
+            7: 0.05,
+            8: 0.10,
+            9: 0.10,
+            10: 0.10,
+            11: 0.10,
+        }
 
         # self.marker_offset = {0: [0.21, 0.006],
         #                       1: [-0.178, 0.012],
@@ -104,28 +105,48 @@ class Aruco():
         rospy.Timer(rospy.Duration(0.1), self.marker_detection)
 
     def load_camera_config(self):
+        """This function is used to load the camera calibration parameters."""
         cwd = os.path.dirname(__file__)
-        filename = cwd + '/../../config/in_air/ost.yaml'
+        filename = cwd + "/../../config/in_air/ost.yaml"
         f = open(filename, "r")
         camera_params = yaml.load(f.read(), Loader=yaml.SafeLoader)
-        self.cam_mat = np.array(camera_params['camera_matrix']['data'], np.float32).reshape(3, 3)
-        self.proj_mat = np.array(camera_params['projection_matrix']['data'], np.float32).reshape(3, 4)
-        self.dist_mat = np.array(camera_params['distortion_coefficients']['data'], np.float32).reshape(1, 5)
+        self.cam_mat = np.array(
+            camera_params["camera_matrix"]["data"], np.float32
+        ).reshape(3, 3)
+        self.proj_mat = np.array(
+            camera_params["projection_matrix"]["data"], np.float32
+        ).reshape(3, 4)
+        self.dist_mat = np.array(
+            camera_params["distortion_coefficients"]["data"], np.float32
+        ).reshape(1, 5)
 
     def initialize_subscribers_publishers(self):
-        self.image_sub = rospy.Subscriber("/BlueROV2/video",
-                                          Image, self.callback_image, queue_size=1)
-        self.image_pub = rospy.Publisher('/bluerov2_dock/marker_detection', Image, queue_size=1)
-        self.vision_pose_pub = rospy.Publisher("/bluerov2_dock/vision_pose/pose", PoseStamped, queue_size=1)
+        """This function is used to initialize the subscribers and publishers."""
+        self.image_sub = rospy.Subscriber(
+            "/BlueROV2/video", Image, self.callback_image, queue_size=1
+        )
+        self.image_pub = rospy.Publisher(
+            "/bluerov2_dock/marker_detection", Image, queue_size=1
+        )
+        self.vision_pose_pub = rospy.Publisher(
+            "/bluerov2_dock/vision_pose/pose", PoseStamped, queue_size=1
+        )
 
     def rotation_matrix_to_euler(self, R):
+        """This function is used to convert a rotation matrix to euler angles.
+
+        Args:
+            R: Rotation matrix
+        """
+
         def isRotationMatrix(R):
             Rt = np.transpose(R)
             shouldBeIdentity = np.dot(Rt, R)
             I = np.identity(3, dtype=R.dtype)
             n = np.linalg.norm(I - shouldBeIdentity)
             return n < 1e-6
-        assert (isRotationMatrix(R))
+
+        assert isRotationMatrix(R)
 
         sy = math.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
 
@@ -143,12 +164,26 @@ class Aruco():
         return np.array([x, y, z], np.float32)
 
     def callback_image(self, data):
+        """This function is used to receive the image from the camera.
+
+        Args:
+            data: Image data
+        """
         try:
             self.image = self.bridge.imgmsg_to_cv2(data, desired_encoding="bgr8")
         except CvBridgeError as e:
             print(e)
 
     def marker_detection(self, timerEvent):
+        """This function is used to detect the ArUco markers and
+        estimate the pose of the ROV.
+
+        Args:
+            timerEvent: ROS timer event
+
+        Returns:
+            None
+        """
         try:
             frame = self.image
         except Exception as e:
@@ -196,7 +231,9 @@ class Aruco():
             detected_marker_ids = np.array(detected_marker_ids)
             des_marker_corners = np.array(des_marker_corners)
 
-            cv2.aruco.drawDetectedMarkers(frame, des_marker_corners, detected_marker_ids)
+            cv2.aruco.drawDetectedMarkers(
+                frame, des_marker_corners, detected_marker_ids
+            )
 
             # if detected_marker_ids.shape[0] > 0:
             #     print(detected_marker_ids.shape)
@@ -214,13 +251,19 @@ class Aruco():
                 # print(i)
                 # rospy.loginfo("[Aruco][marker_detection] Markers detected")
 
-                marker_points = np.array([[-marker_size / 2, marker_size / 2, 0],
-                                          [marker_size / 2, marker_size / 2, 0],
-                                          [marker_size / 2, -marker_size / 2, 0],
-                                          [-marker_size / 2, -marker_size / 2, 0]], dtype=np.float32)
+                marker_points = np.array(
+                    [
+                        [-marker_size / 2, marker_size / 2, 0],
+                        [marker_size / 2, marker_size / 2, 0],
+                        [marker_size / 2, -marker_size / 2, 0],
+                        [-marker_size / 2, -marker_size / 2, 0],
+                    ],
+                    dtype=np.float32,
+                )
 
                 _, rvec, tvec = cv2.solvePnP(
-                    marker_points, des_marker_corners[i], camera_mtx, dist_mtx)
+                    marker_points, des_marker_corners[i], camera_mtx, dist_mtx
+                )
 
                 rvec = np.array(rvec).T
                 tvec = np.array(tvec).T
@@ -263,23 +306,41 @@ class Aruco():
 
                 # transform lookup: base_link -> camera_link
                 try:
-                    tf_base_to_camera = self.tf_buffer.lookup_transform("base_link", "camera_link", rospy.Time())
+                    tf_base_to_camera = self.tf_buffer.lookup_transform(
+                        "base_link", "camera_link", rospy.Time()
+                    )
                 except TransformException as e:
-                    rospy.logwarn("[Aruco][marker_detection] Transform unavailable: {0}".format(e))
+                    rospy.logwarn(
+                        "[Aruco][marker_detection] Transform unavailable: {0}".format(e)
+                    )
                     return
 
                 # transform lookup: marker -> map
                 try:
-                    tf_marker_to_map = self.tf_buffer.lookup_transform(marker_id_str, "map", rospy.Time())
+                    tf_marker_to_map = self.tf_buffer.lookup_transform(
+                        marker_id_str, "map", rospy.Time()
+                    )
                 except TransformException as e:
-                    rospy.logwarn("[Aruco][marker_detection] Transform unavailable: {0}".format(e))
+                    rospy.logwarn(
+                        "[Aruco][marker_detection] Transform unavailable: {0}".format(e)
+                    )
                     return
 
                 def transform_to_arr(t):
                     arr = np.eye(4)
-                    arr[:3, 3] = (t.transform.translation.x, t.transform.translation.y, t.transform.translation.z)
-                    arr[:3, :3] = R.from_quat([t.transform.rotation.x, t.transform.rotation.y,
-                                              t.transform.rotation.z, t.transform.rotation.w]).as_matrix()
+                    arr[:3, 3] = (
+                        t.transform.translation.x,
+                        t.transform.translation.y,
+                        t.transform.translation.z,
+                    )
+                    arr[:3, :3] = R.from_quat(
+                        [
+                            t.transform.rotation.x,
+                            t.transform.rotation.y,
+                            t.transform.rotation.z,
+                            t.transform.rotation.w,
+                        ]
+                    ).as_matrix()
                     return arr
 
                 def arr_to_pose(arr, frame_id):
@@ -297,7 +358,9 @@ class Aruco():
                     return pose
 
                 # tf_base_to_map = transform_to_arr(tf_base_to_camera) @ transform_to_arr(tf_cam_to_marker) @ transform_to_arr(tf_marker_to_map)
-                tf_base_to_marker = transform_to_arr(tf_base_to_camera) @ transform_to_arr(tf_cam_to_marker)
+                tf_base_to_marker = transform_to_arr(
+                    tf_base_to_camera
+                ) @ transform_to_arr(tf_cam_to_marker)
                 # rospy.logwarn(f"TF base->camera: {tf_base_to_camera}")
                 # rospy.logwarn(f"TF camera-> marker: {tf_cam_to_marker}")
                 # rospy.logwarn(f"TF base->marker: {tf_base_to_marker}")
@@ -319,19 +382,23 @@ class Aruco():
                 # rov_pose.pose.orientation.z = tf_base_to_map.transform.rotation.z
                 # rov_pose.pose.orientation.w = tf_base_to_map.transform.rotation.w
 
-                rov_orientation = R.from_quat([
-                    rov_pose.pose.orientation.x,
-                    rov_pose.pose.orientation.y,
-                    rov_pose.pose.orientation.z,
-                    rov_pose.pose.orientation.w,
-                ]).as_euler("xyz")
+                rov_orientation = R.from_quat(
+                    [
+                        rov_pose.pose.orientation.x,
+                        rov_pose.pose.orientation.y,
+                        rov_pose.pose.orientation.z,
+                        rov_pose.pose.orientation.w,
+                    ]
+                ).as_euler("xyz")
 
-                rov_pose_arr = np.array([
-                    rov_pose.pose.position.x,
-                    rov_pose.pose.position.y,
-                    rov_pose.pose.position.z,
-                    rov_orientation
-                ])
+                rov_pose_arr = np.array(
+                    [
+                        rov_pose.pose.position.x,
+                        rov_pose.pose.position.y,
+                        rov_pose.pose.position.z,
+                        rov_orientation,
+                    ]
+                )
 
                 self.pose_buffer.append(rov_pose_arr)
 
@@ -368,13 +435,18 @@ class Aruco():
                 self.vision_pose_pub.publish(rov_pose)
                 # rospy.logwarn("Published")
 
-        cv2.circle(frame, (int(frame.shape[1] / 2), int(frame.shape[0] / 2)), radius=5, color=(255, 0, 0))
+        cv2.circle(
+            frame,
+            (int(frame.shape[1] / 2), int(frame.shape[0] / 2)),
+            radius=5,
+            color=(255, 0, 0),
+        )
         cv2.imshow("marker", frame)
         cv2.waitKey(1)
 
 
-if __name__ == '__main__':
-    rospy.init_node('marker_detection', anonymous=True)
+if __name__ == "__main__":
+    rospy.init_node("marker_detection", anonymous=True)
     obj = Aruco()
     try:
         rospy.spin()
